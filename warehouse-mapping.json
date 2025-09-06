@@ -1,0 +1,203 @@
+{
+  "warehouseId": "MDT1",
+  "pickupZones": {
+    "REC6701": {
+      "pairedAisle": 60,
+      "description": "Receiving Zone 6701",
+      "coordinates": {
+        "x": 0,
+        "y": 60
+      }
+    },
+    "REC7401": {
+      "pairedAisle": 49,
+      "description": "Receiving Zone 7401",
+      "coordinates": {
+        "x": 0,
+        "y": 49
+      }
+    },
+    "REC7201": {
+      "pairedAisle": 54,
+      "description": "Receiving Zone 7201",
+      "coordinates": {
+        "x": 0,
+        "y": 54
+      }
+    },
+    "REC7701": {
+      "pairedAisle": 44,
+      "description": "Receiving Zone 7701",
+      "coordinates": {
+        "x": 0,
+        "y": 44
+      }
+    },
+    "RECVASOUT": {
+      "pairedAisle": 20,
+      "description": "Receiving/Outbound Zone",
+      "coordinates": {
+        "x": 0,
+        "y": 20
+      }
+    },
+    "REC5401": {
+      "pairedAisle": 85,
+      "description": "Receiving Zone 5401",
+      "coordinates": {
+        "x": 0,
+        "y": 85
+      }
+    },
+    "IBCONT01": {
+      "pairedAisle": 95,
+      "description": "Inbound Container Zone 01",
+      "coordinates": {
+        "x": 0,
+        "y": 95
+      }
+    },
+    "IBCONT02": {
+      "pairedAisle": 100,
+      "description": "Inbound Container Zone 02",
+      "coordinates": {
+        "x": 0,
+        "y": 100
+      }
+    },
+    "IBPS1": {
+      "pairedAisle": 32,
+      "description": "Inbound Prep Station 1",
+      "coordinates": {
+        "x": 0,
+        "y": 32
+      }
+    },
+    "IBPS2": {
+      "pairedAisle": 81,
+      "description": "Inbound Prep Station 2",
+      "coordinates": {
+        "x": 0,
+        "y": 81
+      }
+    },
+    "IBVC": {
+      "pairedAisle": 32,
+      "description": "Inbound Verification Center",
+      "coordinates": {
+        "x": 0,
+        "y": 32
+      }
+    },
+    "BPFLIP": {
+      "pairedAisle": 34,
+      "description": "Bulk Pick Flip Zone",
+      "coordinates": {
+        "x": 0,
+        "y": 34
+      }
+    }
+  },
+  "aisles": {
+    "1": {
+      "pairedPickupZone": "IBDZ01",
+      "bays": {
+        "A": {"position": 1, "depth": 1},
+        "B": {"position": 2, "depth": 2},
+        "C": {"position": 3, "depth": 3},
+        "D": {"position": 4, "depth": 4},
+        "E": {"position": 5, "depth": 5},
+        "F": {"position": 6, "depth": 6},
+        "G": {"position": 7, "depth": 7},
+        "H": {"position": 8, "depth": 8},
+        "I": {"position": 9, "depth": 9},
+        "J": {"position": 10, "depth": 10}
+      },
+      "coordinates": {
+        "x": 1,
+        "y": 1
+      }
+    },
+    "2": {
+      "pairedPickupZone": "IBDZ02",
+      "bays": {
+        "A": {"position": 1, "depth": 1},
+        "B": {"position": 2, "depth": 2},
+        "C": {"position": 3, "depth": 3},
+        "D": {"position": 4, "depth": 4},
+        "E": {"position": 5, "depth": 5},
+        "F": {"position": 6, "depth": 6},
+        "G": {"position": 7, "depth": 7},
+        "H": {"position": 8, "depth": 8},
+        "I": {"position": 9, "depth": 9},
+        "J": {"position": 10, "depth": 10}
+      },
+      "coordinates": {
+        "x": 2,
+        "y": 2
+      }
+    },
+    "20": {
+      "pairedPickupZone": "RECVASOUT",
+      "bays": {
+        "A": {"position": 1, "depth": 1},
+        "B": {"position": 2, "depth": 2},
+        "C": {"position": 3, "depth": 3},
+        "D": {"position": 4, "depth": 4},
+        "E": {"position": 5, "depth": 5},
+        "F": {"position": 6, "depth": 6},
+        "G": {"position": 7, "depth": 7},
+        "H": {"position": 8, "depth": 8},
+        "I": {"position": 9, "depth": 9},
+        "J": {"position": 10, "depth": 10}
+      },
+      "coordinates": {
+        "x": 20,
+        "y": 20
+      }
+    }
+  },
+  "rackLevels": {
+    "A": {"height": 1, "description": "Ground level 1"},
+    "B": {"height": 1, "description": "Ground level 2"},
+    "C": {"height": 1, "description": "Ground level 3"},
+    "D": {"height": 2, "description": "First elevated level"},
+    "G": {"height": 3, "description": "Second elevated level"},
+    "J": {"height": 4, "description": "Third elevated level"},
+    "M": {"height": 5, "description": "Fourth elevated level"},
+    "P": {"height": 6, "description": "Fifth elevated level"},
+    "S": {"height": 7, "description": "Top level (sixth elevated)"}
+  },
+  "travelCalculations": {
+    "aisleDistanceMultiplier": 1.0,
+    "bayDistanceMultiplier": 0.5,
+    "heightDistanceMultiplier": 0.3,
+    "baseAisleDistance": 100,
+    "baseBayDistance": 20,
+    "baseHeightDistance": 10
+  },
+  "locationParser": {
+    "regex": "^([A-Z]{4,})([0-9]{2,3})([A-Z])([0-9]{2})([A-Z])$",
+    "groups": {
+      "zone": 1,
+      "aisle": 2,
+      "bay": 3,
+      "position": 4,
+      "level": 5
+    },
+    "example": "RPUT014A01A",
+    "explanation": {
+      "RPUT": "Zone (Reserve Putaway)",
+      "014": "Aisle 14",
+      "A": "Bay A",
+      "01": "Position 01",
+      "A": "Level A (floor level)"
+    }
+  },
+  "instructions": {
+    "populateData": "Replace the template data above with actual data from MDT1 BAY STRUCTURE.xlsx",
+    "pickupZoneMappings": "Update pickupZones with data from rows 64-65 paired with aisle numbers from row 5",
+    "bayStructure": "Update each aisle's bay structure based on the Excel data",
+    "coordinateSystem": "Adjust coordinates to reflect actual warehouse layout for heat map visualization"
+  }
+}

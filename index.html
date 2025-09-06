@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RT Productivity Analysis</title>
+
+  <!-- Page-specific CSS -->
+  <link rel="stylesheet" href="styles.css">
+
+
+  <!-- External libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body style="margin: 0; padding: 0; width: 100%; overflow-x: auto;">
+  <!-- Main Content Area -->
+  <div class="main" id="mainContent" style="max-width: none; width: 100%;">
+    <div class="app-header">
+      <button class="clms-btn" id="openCLMSBtn">
+        🔗 Open CLMS
+      </button>
+      <h1 class="app-title">RT Productivity Analysis</h1>
+      <p class="app-subtitle">Reach Truck Performance & Transaction Analysis</p>
+    </div>
+
+    <div class="date-time-info" id="dateTimeRange">
+      <div class="info-label">Analysis Period:</div>
+      <div class="info-content">No data loaded</div>
+    </div>
+
+    <!-- File Upload Section -->
+    <div class="upload-section">
+      <div class="upload-buttons">
+        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+          📂 Select Transactions File (Korber Search Transactions)
+          <span class="data-status-checkmark" id="transactionDataCheck" style="display: none; visibility: hidden;">✅</span>
+        </button>
+        <button class="labor-btn labor-btn-secondary" id="pasteLaborDataBtnTop">
+          📋 Import CLMS Data from Clipboard
+          <span class="data-status-checkmark" id="laborDataCheck" style="display: none; visibility: hidden;">✅</span>
+        </button>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx, .xls" style="display:none" onchange="handleFile(event)" />
+
+      <!-- File Info Display -->
+      <div class="file-info" id="fileInfo" style="display: none;">
+        <div class="file-details">
+          <span class="file-icon">📄</span>
+          <div class="file-text">
+            <div class="file-name" id="fileName"></div>
+            <div class="file-metadata">
+              <span id="fileSize"></span> •
+              <span id="fileDate"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- STU Logic Explanation -->
+    <div class="stu-logic-section" id="stuLogicSection" style="display: none;">
+      <div class="alert alert-info"
+        style="background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+        <h4 style="color: #0c5460; margin-bottom: 0.75rem;">📋 STU (Seek to Understand) Criteria</h4>
+        <p style="color: #0c5460; margin-bottom: 0.5rem; font-size: 0.95rem;">Team members are flagged for STU based on the following criteria:</p>
+        <ul style="color: #0c5460; margin-bottom: 0; font-size: 0.9rem; padding-left: 1.25rem;">
+          <li>Must have minimum 2 hours worked (fair evaluation threshold)</li>
+          <li><strong>Top 2</strong> team members for most long transactions (>10 minutes)</li>
+          <li><strong>Bottom 3</strong> team members for lowest TPH rates</li>
+          <li>Overlapping TMs are not duplicated (3-5 total STU flags possible)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Summary Metrics -->
+    <div class="metrics-section" id="metricsSection">
+      <!-- Overall Metrics -->
+      <div id="overallMetrics">
+        <div class="metrics-category">
+          <h3>Transaction Overview</h3>
+          <p id="totalTransactions"></p>
+          <p id="totalTMs"></p>
+          <p id="avgTransactionsPerTM"></p>
+          <p id="avgTransactionTime"></p>
+          <p id="dateRangeProcessed"></p>
+        </div>
+        <div class="metrics-category">
+          <h3>Performance Summary</h3>
+          <p id="avgPutawayRate"></p>
+          <p id="avgTravelDistance"></p>
+          <p id="avgTravelDepth"></p>
+          <p id="avgRackHeight"></p>
+        </div>
+        <div class="metrics-category">
+          <h3>Issue Tracking</h3>
+          <p id="longTransactionCount"></p>
+          <p id="longTransactionPercent"></p>
+          <p id="avgLongTransactionTime"></p>
+          <p id="lowestTPHTM"></p>
+          <p id="mostLongTxTM"></p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Unified TM Performance List -->
+    <div class="unified-tm-section" id="unifiedTMSection" style="display: none;">
+      <h3>📋 Team Member Performance & Long Transaction Analysis</h3>
+      <p>Complete performance overview with travel metrics, RT rates from CLMS, and long transaction details for all
+        team members. Click any card for detailed transaction breakdown.</p>
+
+      <!-- STU Flagged TMs Section -->
+      <div class="stu-flagged-section" id="stuFlaggedSection" style="display: none;">
+        <h4 style="color: #dc3545; margin-bottom: 1rem;">⚠️ STU Flagged Team Members</h4>
+        <div class="tm-cards-container" id="stuFlaggedContainer">
+          <!-- STU flagged TM cards will be populated here -->
+        </div>
+      </div>
+
+      <!-- Other TMs Section with Dropdown -->
+      <div class="other-tms-section" id="otherTMsSection" style="display: none;">
+        <button class="other-tms-header"
+          style="display: flex; align-items: center; justify-content: space-between; margin: 2rem 0 1rem 0; padding: 1rem; background: #f8f9fa; border-radius: 8px; cursor: pointer;"
+          onclick="toggleOtherTMs()">
+          <h4 style="color: #28a745; margin: 0;">✓ Click to Toggle Remaining TMs</h4>
+          <div class="dropdown-arrow" id="dropdownArrow" style="font-size: 1.2rem; transition: transform 0.3s ease;">▼
+          </div>
+        </button>
+        <div class="tm-cards-container" id="otherTMsContainer" style="display: none;">
+          <!-- Other TM cards will be populated here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Warehouse Heat Map Section (moved up to replace charts) -->
+    <div class="warehouse-heatmap-section" id="warehouseHeatmapSection" style="display: none;">
+      <div class="section-header-main">
+        <h3 class="section-title-main">Warehouse Transaction Heat Map</h3>
+        <p class="section-description">Visual representation of transaction patterns across warehouse locations</p>
+      </div>
+      <div class="heatmap-controls">
+        <div class="heatmap-control-group">
+          <label for="heatmapTMSelector">View Transactions For:</label>
+          <select id="heatmapTMSelector" class="heatmap-dropdown">
+            <option value="all">All Team Members</option>
+          </select>
+        </div>
+        <div class="heatmap-control-group">
+          <label for="heatmapTransactionType">Transaction Type:</label>
+          <select id="heatmapTransactionType" class="heatmap-dropdown">
+            <option value="all">All Transactions</option>
+            <option value="long">Long Transactions Only (>10min)</option>
+          </select>
+        </div>
+        <button id="refreshHeatmapBtn" class="btn btn-primary">🔄 Update Heat Map</button>
+      </div>
+      <div class="heatmap-info-bar"
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 2px solid #dee2e6;">
+        <div class="rack-height-legend" style="display: flex; align-items: center; gap: 25px;">
+          <div class="legend-title" style="color: #212529; font-weight: bold; margin-right: 15px; font-size: 16px;">Rack
+            Height Legend:</div>
+          <span class="legend-item"
+            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
+            <span class="legend-color"
+              style="width: 14px; height: 14px; background: #00ff00; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>Ground
+            (A, B, C)
+          </span>
+          <span class="legend-item"
+            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
+            <span class="legend-color"
+              style="width: 14px; height: 14px; background: #ffff00; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>Mid
+            (D, G, J)
+          </span>
+          <span class="legend-item"
+            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
+            <span class="legend-color"
+              style="width: 14px; height: 14px; background: #ff0000; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>High
+            (M, P, S)
+          </span>
+        </div>
+        <div class="hover-details" id="hoverDetails"
+          style="color: #212529; font-weight: bold; font-size: 14px; min-width: 250px; text-align: right;">
+          Hover over single transactions to see location
+        </div>
+      </div>
+      <div class="warehouse-display-container"
+        style="display: flex; gap: 20px; align-items: flex-start; justify-content: center; margin-bottom: 20px;">
+        <!-- Left sidebar with statistics -->
+        <div class="warehouse-stats-sidebar"
+          style="display: flex; flex-direction: column; gap: 15px; min-width: 200px;">
+          <!-- Rack Level Totals -->
+          <div class="stat-card" id="rackLevelTotals"
+            style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Rack Level Totals</h4>
+            <div class="stat-item"
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="display: flex; align-items: center; gap: 8px; color: #212529;">
+                <span
+                  style="width: 12px; height: 12px; background: #00ff00; border-radius: 50%; border: 1px solid #333;"></span>Ground
+                (A,B,C):
+              </span>
+              <span id="groundTotal" style="font-weight: bold; color: #212529;">0</span>
+            </div>
+            <div class="stat-item"
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="display: flex; align-items: center; gap: 8px; color: #212529;">
+                <span
+                  style="width: 12px; height: 12px; background: #ffff00; border-radius: 50%; border: 1px solid #333;"></span>Mid
+                (D,G,J):
+              </span>
+              <span id="midTotal" style="font-weight: bold; color: #212529;">0</span>
+            </div>
+            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="display: flex; align-items: center; gap: 8px; color: #212529;">
+                <span
+                  style="width: 12px; height: 12px; background: #ff0000; border-radius: 50%; border: 1px solid #333;"></span>High
+                (M,P,S):
+              </span>
+              <span id="highTotal" style="font-weight: bold; color: #212529;">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main warehouse map -->
+        <div class="warehouse-map-container"
+          style="width: fit-content; max-width: 1400px; height: auto; overflow: hidden; display: block;">
+          <canvas id="warehouseCanvas" width="1400" height="800"
+            style="display: block; max-width: 100%; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;"></canvas>
+          <div id="warehouseTooltip" class="warehouse-tooltip"></div>
+        </div>
+      </div>
+      <div class="heatmap-stats" id="heatmapStats">
+        <!-- Statistics will be populated dynamically -->
+      </div>
+    </div>
+
+
+
+    <!-- Action Buttons -->
+    <div class="button-container">
+      <button onclick="location.reload()" id="clearButton" style="display: none;">
+        🔄 Reset
+      </button>
+    </div>
+
+    <footer>
+      RT Productivity Analyzer • v1.0 • Built for Warehouse Analytics
+    </footer>
+  </div>
+
+
+  <!-- Warehouse calculations module -->
+  <script src="warehouse-calculations.js"></script>
+
+  <!-- Page-specific JavaScript -->
+  <script src="RTRates.js"></script>
+</body>
+
+</html>
