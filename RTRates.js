@@ -3130,6 +3130,7 @@ function openSTUConversationForm(tmId) {
                 <option value="Time off Task">Time off Task</option>
                 <option value="Extended/Unauthorized Break">Extended/Unauthorized Break</option>
                 <option value="Failure to Follow Process">Failure to Follow Process</option>
+                <option value="N/A">N/A</option>
               </select>
             </div>
             
