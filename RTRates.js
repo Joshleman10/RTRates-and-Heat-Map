@@ -1620,6 +1620,7 @@ let selectedRectangle = null;
 let rectangleSelectionEnabled = false;
 let heatmapImageData = null; // Cache the heat map for performance
 let lastPreviewTime = 0; // Throttle preview updates
+let lastStatsUpdateTime = 0; // Throttle stats updates
 
 // Warehouse layout configuration based on Excel file structure
 const WAREHOUSE_CONFIG = {
@@ -2654,12 +2655,24 @@ function toggleRectangleSelection() {
     btn.classList.add('btn-warning');
     btn.classList.remove('btn-secondary');
     warehouseCanvas.style.cursor = 'crosshair';
+    
+    // Show stats area immediately when entering selection mode
+    document.getElementById('rectangleSelectionStats').style.display = 'block';
+    // Initialize with zero values
+    document.getElementById('selectedAreaTransactions').textContent = '0';
+    document.getElementById('selectedAreaPercentage').textContent = '0%';
+    document.getElementById('selectedAreaLocations').textContent = '0';
   } else {
     btn.textContent = '📐 Rectangle Select';
     btn.classList.add('btn-secondary');
     btn.classList.remove('btn-warning');
     warehouseCanvas.style.cursor = 'default';
     isDrawingRectangle = false;
+    
+    // Hide stats area when exiting selection mode
+    if (!selectedRectangle) {
+      document.getElementById('rectangleSelectionStats').style.display = 'none';
+    }
   }
 }
 
@@ -2745,8 +2758,10 @@ function drawRectanglePreview() {
   }
 }
 
-function calculateRectangleSelectionStats() {
-  if (!selectedRectangle || !currentHeatmapData) return;
+function calculateRectangleSelectionStats(rect = null) {
+  // Use provided rectangle or fall back to selectedRectangle
+  const targetRect = rect || selectedRectangle;
+  if (!targetRect || !currentHeatmapData) return;
   
   let selectedTransactions = 0;
   let selectedLocations = 0;
@@ -2757,7 +2772,7 @@ function calculateRectangleSelectionStats() {
     const detail = currentHeatmapData.details[locationKey];
     const position = getBayPosition(detail.aisle, detail.bay);
     
-    if (position && isPointInRectangle(position.x, position.y, selectedRectangle)) {
+    if (position && isPointInRectangle(position.x, position.y, targetRect)) {
       selectedTransactions += count;
       selectedLocations++;
     }
@@ -2770,6 +2785,26 @@ function calculateRectangleSelectionStats() {
   document.getElementById('selectedAreaPercentage').textContent = percentage + '%';
   document.getElementById('selectedAreaLocations').textContent = selectedLocations;
   document.getElementById('rectangleSelectionStats').style.display = 'block';
+}
+
+function calculateLiveRectangleStats() {
+  if (!isDrawingRectangle || !rectangleSelectionEnabled) return;
+  
+  // Create preview rectangle for stats calculation
+  const previewRect = {
+    startX: Math.min(rectangleStart.x, rectangleEnd.x),
+    startY: Math.min(rectangleStart.y, rectangleEnd.y),
+    endX: Math.max(rectangleStart.x, rectangleEnd.x),
+    endY: Math.max(rectangleStart.y, rectangleEnd.y)
+  };
+  
+  // Only calculate if rectangle has meaningful size
+  const width = previewRect.endX - previewRect.startX;
+  const height = previewRect.endY - previewRect.startY;
+  
+  if (width > 20 && height > 20) {
+    calculateRectangleSelectionStats(previewRect);
+  }
 }
 
 function isPointInRectangle(x, y, rect) {
@@ -2848,12 +2883,20 @@ function handleHeatmapMouseMove(event) {
   if (rectangleSelectionEnabled && isDrawingRectangle) {
     rectangleEnd = { x, y };
     
-    // Throttle preview updates to improve performance
     const now = Date.now();
-    if (now - lastPreviewTime > 16) { // ~60fps
+    
+    // Throttle preview updates to improve performance (~60fps)
+    if (now - lastPreviewTime > 16) {
       requestAnimationFrame(drawRectanglePreview);
       lastPreviewTime = now;
     }
+    
+    // Throttle stats updates to improve performance (~10fps for stats)
+    if (now - lastStatsUpdateTime > 100) {
+      requestAnimationFrame(calculateLiveRectangleStats);
+      lastStatsUpdateTime = now;
+    }
+    
     return;
   }
   
