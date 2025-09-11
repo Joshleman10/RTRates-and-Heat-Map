@@ -5,6 +5,7 @@ let warehouseLayoutData = {};
 let processedTMData = {};
 let laborHoursData = {}; // Store actual labor hours data from Labor Management System
 let longTransactions = [];
+let pureRTLongTransactions = []; // Track Pure RT Long transactions (from RPUT locations)
 let selectedTMId = null;
 let singleTransactionCoordinates = []; // Track individual transaction positions for hover events
 let currentUserUsername = ''; // Store username extracted from file path for STU forms
@@ -526,12 +527,20 @@ function groupByEmployeeAndCalculateMetrics(transactions) {
     const putawayTime = transaction.putaway.timeToExecute; // 212 transaction time only
     if (putawayTime > 600) { // 600 seconds = 10 minutes
       tmData.longTransactionCount++;
-      longTransactions.push({
+      const longTransactionData = {
         ...transaction,
         employeeId: employeeId,
         putawayTimeMinutes: (putawayTime / 60).toFixed(2),
         totalTimeMinutes: (transaction.totalTime / 60).toFixed(2) // Keep total for reference
-      });
+      };
+      
+      longTransactions.push(longTransactionData);
+      
+      // Check if this is a Pure RT Long transaction (212 transaction with "from location" starting with RPUT)
+      const fromLocation = (transaction.putaway.fromLocation || "").toString().toUpperCase();
+      if (fromLocation.startsWith('RPUT')) {
+        pureRTLongTransactions.push(longTransactionData);
+      }
     }
   });
   
@@ -708,6 +717,13 @@ function displayOverallMetrics() {
   updateElement('longTransactionCount', `Long Transactions (>10min): ${totalLongTransactions}`);
   updateElement('longTransactionPercent', `Long Transaction % (of 212s): ${totalTransactions > 0 ? ((totalLongTransactions / totalTransactions) * 100).toFixed(1) : '0.0'}%`);
   updateElement('avgLongTransactionTime', `Avg Long Transaction Time: ${avgLongTransactionTime} minutes`);
+  
+  // Pure RT Long transactions metric
+  const totalPureRTLongTransactions = pureRTLongTransactions.length;
+  const pureRTLongTransactionPercent = totalTransactions > 0 ? ((totalPureRTLongTransactions / totalTransactions) * 100).toFixed(1) : '0.0';
+  updateElement('pureRTLongTransactionCount', `Pure RT Long Transactions (RPUT >10min): ${totalPureRTLongTransactions}`);
+  updateElement('pureRTLongTransactionPercent', `Pure RT Long Transaction % (of total RT): ${pureRTLongTransactionPercent}%`);
+  
   updateElement('lowestTPHTM', `Lowest TPH: ${lowestTPHTM}`);
   updateElement('mostLongTxTM', `Most Long Transactions: ${mostLongTxTM}`);
   
@@ -1196,6 +1212,7 @@ function clearRTData() {
   rtTransactionData = [];
   processedTMData = {};
   longTransactions = [];
+  pureRTLongTransactions = [];
   selectedTMId = null;
   laborHoursData = {};
   
@@ -1221,7 +1238,8 @@ function clearRTData() {
   const elementsToReset = [
     'totalTransactions', 'totalTMs', 'avgTransactionsPerTM', 'avgTransactionTime', 'avgPutawayRate',
     'avgTravelDistance', 'avgTravelDepth', 'avgRackHeight', 'longTransactionCount',
-    'longTransactionPercent', 'avgLongTransactionTime', 'lowestTPHTM', 'mostLongTxTM'
+    'longTransactionPercent', 'avgLongTransactionTime', 'pureRTLongTransactionCount', 
+    'pureRTLongTransactionPercent', 'lowestTPHTM', 'mostLongTxTM'
   ];
   
   elementsToReset.forEach(id => {
@@ -1594,6 +1612,15 @@ let currentHeatmapData = {};
 let heatmapTransactionData = [];
 let selectedPickupZone = null; // Track selected pickup zone for filtering
 
+// Rectangle selection variables
+let isDrawingRectangle = false;
+let rectangleStart = { x: 0, y: 0 };
+let rectangleEnd = { x: 0, y: 0 };
+let selectedRectangle = null;
+let rectangleSelectionEnabled = false;
+let heatmapImageData = null; // Cache the heat map for performance
+let lastPreviewTime = 0; // Throttle preview updates
+
 // Warehouse layout configuration based on Excel file structure
 const WAREHOUSE_CONFIG = {
   canvas: {
@@ -1705,6 +1732,9 @@ function populateHeatmapTMSelector() {
   
   // Set up event listeners for heatmap controls
   setupHeatmapEventListeners();
+  
+  // Set up rectangle selection event listeners
+  setupRectangleSelectionListeners();
 }
 
 function setupHeatmapEventListeners() {
@@ -2588,7 +2618,162 @@ function drawHeatmap() {
     }
   });
   
+  // Draw selection rectangle if active (only completed selections)
+  if (selectedRectangle) {
+    drawSelectionRectangle();
+  }
+  
+  // Cache the heat map image for performance during rectangle selection
+  if (warehouseCtx) {
+    heatmapImageData = warehouseCtx.getImageData(0, 0, warehouseCanvas.width, warehouseCanvas.height);
+  }
+  
   updateHeatmapStats();
+}
+
+// Rectangle Selection System
+function setupRectangleSelectionListeners() {
+  const rectangleSelectBtn = document.getElementById('rectangleSelectBtn');
+  const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+  
+  if (rectangleSelectBtn) {
+    rectangleSelectBtn.addEventListener('click', toggleRectangleSelection);
+  }
+  
+  if (clearSelectionBtn) {
+    clearSelectionBtn.addEventListener('click', clearRectangleSelection);
+  }
+}
+
+function toggleRectangleSelection() {
+  rectangleSelectionEnabled = !rectangleSelectionEnabled;
+  const btn = document.getElementById('rectangleSelectBtn');
+  
+  if (rectangleSelectionEnabled) {
+    btn.textContent = '📐 Exit Select Mode';
+    btn.classList.add('btn-warning');
+    btn.classList.remove('btn-secondary');
+    warehouseCanvas.style.cursor = 'crosshair';
+  } else {
+    btn.textContent = '📐 Rectangle Select';
+    btn.classList.add('btn-secondary');
+    btn.classList.remove('btn-warning');
+    warehouseCanvas.style.cursor = 'default';
+    isDrawingRectangle = false;
+  }
+}
+
+function clearRectangleSelection() {
+  selectedRectangle = null;
+  isDrawingRectangle = false;
+  heatmapImageData = null; // Clear cache to force fresh draw
+  document.getElementById('rectangleSelectionStats').style.display = 'none';
+  document.getElementById('clearSelectionBtn').style.display = 'none';
+  drawHeatmap(); // Redraw without selection rectangle
+}
+
+function drawSelectionRectangle() {
+  if (!warehouseCtx) return;
+  
+  let rect = null;
+  
+  if (isDrawingRectangle && rectangleSelectionEnabled) {
+    // Draw preview rectangle while dragging
+    rect = {
+      startX: Math.min(rectangleStart.x, rectangleEnd.x),
+      startY: Math.min(rectangleStart.y, rectangleEnd.y),
+      endX: Math.max(rectangleStart.x, rectangleEnd.x),
+      endY: Math.max(rectangleStart.y, rectangleEnd.y)
+    };
+  } else if (selectedRectangle) {
+    // Draw completed selection rectangle
+    rect = selectedRectangle;
+  }
+  
+  if (rect) {
+    const ctx = warehouseCtx;
+    const width = rect.endX - rect.startX;
+    const height = rect.endY - rect.startY;
+    
+    // Draw rectangle outline
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(rect.startX, rect.startY, width, height);
+    
+    // Draw semi-transparent fill
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+    ctx.fillRect(rect.startX, rect.startY, width, height);
+    
+    // Reset line dash
+    ctx.setLineDash([]);
+  }
+}
+
+function drawRectanglePreview() {
+  if (!warehouseCtx || !heatmapImageData || !isDrawingRectangle) return;
+  
+  // Restore the cached heat map image
+  warehouseCtx.putImageData(heatmapImageData, 0, 0);
+  
+  // Draw the preview rectangle
+  const rect = {
+    startX: Math.min(rectangleStart.x, rectangleEnd.x),
+    startY: Math.min(rectangleStart.y, rectangleEnd.y),
+    endX: Math.max(rectangleStart.x, rectangleEnd.x),
+    endY: Math.max(rectangleStart.y, rectangleEnd.y)
+  };
+  
+  const ctx = warehouseCtx;
+  const width = rect.endX - rect.startX;
+  const height = rect.endY - rect.startY;
+  
+  // Only draw if rectangle has some size
+  if (width > 5 && height > 5) {
+    // Draw rectangle outline
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(rect.startX, rect.startY, width, height);
+    
+    // Draw semi-transparent fill
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+    ctx.fillRect(rect.startX, rect.startY, width, height);
+    
+    // Reset line dash
+    ctx.setLineDash([]);
+  }
+}
+
+function calculateRectangleSelectionStats() {
+  if (!selectedRectangle || !currentHeatmapData) return;
+  
+  let selectedTransactions = 0;
+  let selectedLocations = 0;
+  const totalTransactions = currentHeatmapData.totalTransactions || 0;
+  
+  // Check each location to see if it's within the selected rectangle
+  Object.entries(currentHeatmapData.counts).forEach(([locationKey, count]) => {
+    const detail = currentHeatmapData.details[locationKey];
+    const position = getBayPosition(detail.aisle, detail.bay);
+    
+    if (position && isPointInRectangle(position.x, position.y, selectedRectangle)) {
+      selectedTransactions += count;
+      selectedLocations++;
+    }
+  });
+  
+  const percentage = totalTransactions > 0 ? ((selectedTransactions / totalTransactions) * 100).toFixed(1) : '0.0';
+  
+  // Update display
+  document.getElementById('selectedAreaTransactions').textContent = selectedTransactions;
+  document.getElementById('selectedAreaPercentage').textContent = percentage + '%';
+  document.getElementById('selectedAreaLocations').textContent = selectedLocations;
+  document.getElementById('rectangleSelectionStats').style.display = 'block';
+}
+
+function isPointInRectangle(x, y, rect) {
+  return x >= rect.startX && x <= rect.endX && y >= rect.startY && y <= rect.endY;
 }
 
 function updateHeatmapStats() {
@@ -2601,11 +2786,26 @@ function updateHeatmapStats() {
   const avgTransactionsPerLocation = locationCount > 0 ? 
     (data.totalTransactions / locationCount).toFixed(1) : '0.0';
   
-  // Find hottest location
-  let hottestLocation = { key: 'None', count: 0, detail: null };
+  // Find hottest aisle (aggregate by aisle number)
+  const aisleTransactions = {};
   Object.entries(data.counts).forEach(([key, count]) => {
-    if (count > hottestLocation.count) {
-      hottestLocation = { key, count, detail: data.details[key] };
+    const detail = data.details[key];
+    const aisleNumber = detail.aisle;
+    
+    if (!aisleTransactions[aisleNumber]) {
+      aisleTransactions[aisleNumber] = 0;
+    }
+    aisleTransactions[aisleNumber] += count;
+  });
+  
+  let hottestAisle = { aisle: 'None', count: 0, percentage: 0 };
+  Object.entries(aisleTransactions).forEach(([aisle, count]) => {
+    if (count > hottestAisle.count) {
+      hottestAisle = { 
+        aisle, 
+        count, 
+        percentage: data.totalTransactions > 0 ? ((count / data.totalTransactions) * 100).toFixed(1) : 0
+      };
     }
   });
   
@@ -2623,9 +2823,9 @@ function updateHeatmapStats() {
       <div class="heatmap-stat-value">${avgTransactionsPerLocation}</div>
     </div>
     <div class="heatmap-stat-card">
-      <div class="heatmap-stat-title">Hottest Location</div>
-      <div class="heatmap-stat-value">${hottestLocation.detail ? `Aisle ${hottestLocation.detail.aisle}-${hottestLocation.detail.bay}` : 'None'}</div>
-      <div class="heatmap-stat-title">${hottestLocation.count} transactions</div>
+      <div class="heatmap-stat-title">Hottest Aisle</div>
+      <div class="heatmap-stat-value">${hottestAisle.aisle !== 'None' ? `Aisle ${hottestAisle.aisle}` : 'None'}</div>
+      <div class="heatmap-stat-title">${hottestAisle.count} transactions (${hottestAisle.percentage}%)</div>
     </div>
   `;
   
@@ -2643,6 +2843,19 @@ function handleHeatmapMouseMove(event) {
   const scaleY = warehouseCanvas.height / rect.height;
   const x = displayX * scaleX;
   const y = displayY * scaleY;
+  
+  // Handle rectangle selection drawing with throttling
+  if (rectangleSelectionEnabled && isDrawingRectangle) {
+    rectangleEnd = { x, y };
+    
+    // Throttle preview updates to improve performance
+    const now = Date.now();
+    if (now - lastPreviewTime > 16) { // ~60fps
+      requestAnimationFrame(drawRectanglePreview);
+      lastPreviewTime = now;
+    }
+    return;
+  }
   
   // Check if mouse is over a pickup zone first
   let hoveredPickupZone = null;
@@ -2844,10 +3057,16 @@ function calculateAndDisplayStats(heatmapData) {
   // Calculate pickup zone totals separately from filtered heatmap data
   calculatePickupZoneTotals();
   
-  // Update rack level totals display
-  updateElement('groundTotal', groundTotal);
-  updateElement('midTotal', midTotal);
-  updateElement('highTotal', highTotal);
+  // Calculate percentages for rack levels
+  const totalRackTransactions = groundTotal + midTotal + highTotal;
+  const groundPercent = totalRackTransactions > 0 ? ((groundTotal / totalRackTransactions) * 100).toFixed(1) : '0.0';
+  const midPercent = totalRackTransactions > 0 ? ((midTotal / totalRackTransactions) * 100).toFixed(1) : '0.0';
+  const highPercent = totalRackTransactions > 0 ? ((highTotal / totalRackTransactions) * 100).toFixed(1) : '0.0';
+  
+  // Update rack level totals display with percentages
+  updateElement('groundTotal', `${groundTotal} (${groundPercent}%)`);
+  updateElement('midTotal', `${midTotal} (${midPercent}%)`);
+  updateElement('highTotal', `${highTotal} (${highPercent}%)`);
   
   // Pickup zone counts will be displayed on the buttons during canvas drawing
 }
@@ -2862,6 +3081,30 @@ function handleHeatmapClick(event) {
   const scaleY = warehouseCanvas.height / rect.height;
   const x = clickX * scaleX;
   const y = clickY * scaleY;
+  
+  // Handle rectangle selection mode
+  if (rectangleSelectionEnabled) {
+    if (!isDrawingRectangle) {
+      // Start drawing rectangle
+      isDrawingRectangle = true;
+      rectangleStart = { x, y };
+      rectangleEnd = { x, y };
+    } else {
+      // Complete rectangle
+      isDrawingRectangle = false;
+      rectangleEnd = { x, y };
+      selectedRectangle = {
+        startX: Math.min(rectangleStart.x, rectangleEnd.x),
+        startY: Math.min(rectangleStart.y, rectangleEnd.y),
+        endX: Math.max(rectangleStart.x, rectangleEnd.x),
+        endY: Math.max(rectangleStart.y, rectangleEnd.y)
+      };
+      calculateRectangleSelectionStats();
+      drawHeatmap(); // Redraw with selection rectangle
+      document.getElementById('clearSelectionBtn').style.display = 'inline-block';
+    }
+    return;
+  }
   
   
   // Check if click is on a pickup zone
