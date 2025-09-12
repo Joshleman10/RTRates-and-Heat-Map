@@ -151,6 +151,17 @@ function handleFile(event) {
   const file = event.target.files[0];
   
   if (!file) return;
+  
+  // Log file details for debugging
+  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+  console.log(`📁 Processing file: ${file.name}`);
+  console.log(`📏 File size: ${fileSizeMB}MB`);
+  console.log(`📅 File modified: ${new Date(file.lastModified)}`);
+  
+  // Warn for very large files
+  if (file.size > 100 * 1024 * 1024) { // 100MB+
+    console.warn(`⚠️  Large file detected (${fileSizeMB}MB) - processing may take longer`);
+  }
 
   // Extract username from file path for STU forms
   extractUsernameFromFile(file);
@@ -170,28 +181,45 @@ function handleFile(event) {
   reader.onload = function (e) {
     try {
       showLoadingProgress('Processing Excel data...', 25);
+      console.log(`🔄 Started reading file at ${new Date().toISOString()}`);
       
       // Add slight delay for smoother visual progress
       setTimeout(() => {
         const data = new Uint8Array(e.target.result);
+        console.log(`📦 File buffer size: ${data.length} bytes`);
         showLoadingProgress('Reading workbook...', 35);
         
         setTimeout(() => {
-          const workbook = XLSX.read(data, { type: 'array' });
-          showLoadingProgress('Extracting data...', 45);
-          
-          setTimeout(() => {
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-            showLoadingProgress('Analyzing transactions...', 55);
+          try {
+            console.log(`📖 Starting workbook parsing at ${new Date().toISOString()}`);
+            const workbook = XLSX.read(data, { type: 'array' });
+            console.log(`✅ Workbook parsed successfully. Sheets: ${workbook.SheetNames.join(', ')}`);
+            showLoadingProgress('Extracting data...', 45);
+            
+            setTimeout(() => {
+              try {
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                console.log(`📊 Converting sheet "${workbook.SheetNames[0]}" to JSON...`);
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+                console.log(`✅ Extracted ${rows.length} rows from Excel`);
+                showLoadingProgress('Analyzing transactions...', 55);
 
-            // Process RT transactions with progress updates
-            setTimeout(() => processRTTransactions(rows), 100);
-          }, 200);
+                // Process RT transactions with progress updates
+                setTimeout(() => processRTTransactions(rows), 100);
+              } catch (sheetError) {
+                console.error('❌ Error extracting sheet data:', sheetError);
+                showLoadingProgress('Error extracting data from sheet', 0, true);
+              }
+            }, 200);
+          } catch (workbookError) {
+            console.error('❌ Error parsing workbook:', workbookError);
+            showLoadingProgress('Error reading Excel workbook', 0, true);
+          }
         }, 300);
       }, 200);
       
     } catch (error) {
+      console.error('❌ Error processing file:', error);
       showLoadingProgress('Error processing file', 0, true);
     }
   };
@@ -304,16 +332,27 @@ function displayFileInfo(file) {
 }
 
 function processRTTransactions(rawData) {
+  console.log(`🚀 processRTTransactions started with ${rawData.length} rows at ${new Date().toISOString()}`);
   showLoadingProgress('Processing transactions...', 65);
   
   // Store raw data globally for time range calculations
   rawTransactionData = rawData;
+  
+  // Log sample data structure for debugging
+  if (rawData.length > 0) {
+    console.log('📋 Sample row structure:', Object.keys(rawData[0]));
+    console.log('📋 First row data:', rawData[0]);
+  } else {
+    console.warn('⚠️  No data rows found in Excel file');
+    return;
+  }
   
   // Valid pickup zones for 211 transactions
   const validPickupZones = ['REC6701', 'REC7401', 'REC7201', 'REC7701', 'RECVASOUT', 
                            'REC5401', 'IBCONT01', 'IBCONT02', 'IBPS1', 'IBPS2', 'IBVC', 'BPFLIP'];
   
   showLoadingProgress('Filtering transactions...', 70);
+  console.log(`🔍 Starting to filter ${rawData.length} transactions...`);
   
   // Filter for 211 and 212 transactions with additional validation
   const filteredTransactions = rawData.filter(row => {
@@ -342,6 +381,23 @@ function processRTTransactions(rawData) {
     // 212 transactions just need basic validation
     return validTransactionType && validLocations;
   });
+
+  console.log(`✅ Filtered to ${filteredTransactions.length} valid transactions (from ${rawData.length} total)`);
+  
+  if (filteredTransactions.length === 0) {
+    console.error('❌ No valid transactions found after filtering!');
+    console.log('🔍 Debugging info for first 3 rows:');
+    rawData.slice(0, 3).forEach((row, i) => {
+      const transactionType = row["Transaction Type"] || row["A"] || "";
+      console.log(`Row ${i + 1}:`, {
+        transactionType: transactionType,
+        fromLocation: row["From Location"] || row["L"],
+        toLocation: row["To Location"] || row["P"]
+      });
+    });
+    showLoadingProgress('No valid transactions found', 0, true);
+    return;
+  }
 
   setTimeout(() => {
     showLoadingProgress('Matching transaction pairs...', 75);
@@ -2343,12 +2399,22 @@ function drawWarehouseLayout() {
       
       ctx.fillText(displayName, position.x, position.y + 2);
       
-      // Add transaction count below the button - always show, including 0 counts
+      // Add transaction count and percentage below the button - always show, including 0 counts
       const zoneCount = getZoneTransactionCount(zoneName);
+      const totalTransactions = getTotalPickupTransactions();
+      const percentage = totalTransactions > 0 ? ((zoneCount / totalTransactions) * 100).toFixed(1) : '0.0';
+      
       ctx.fillStyle = '#ffffff'; // White text for visibility on dark background
-      ctx.font = 'bold 14px Arial'; // Larger font size for better readability
+      ctx.font = 'bold 12px Arial'; // Slightly smaller to fit both lines
       ctx.textAlign = 'center';
-      ctx.fillText(`${zoneCount} txns`, position.x, position.y + buttonHalfHeight + 15);
+      
+      // First line: transaction count
+      ctx.fillText(`${zoneCount} txns`, position.x, position.y + buttonHalfHeight + 12);
+      
+      // Second line: percentage
+      ctx.font = '10px Arial'; // Smaller font for percentage
+      ctx.fillStyle = '#cccccc'; // Lighter color for percentage
+      ctx.fillText(`(${percentage}%)`, position.x, position.y + buttonHalfHeight + 25);
     }
   });
   
@@ -2630,6 +2696,9 @@ function drawHeatmap() {
   }
   
   updateHeatmapStats();
+  
+  // Update rectangle selection stats if there's an active selection
+  updateRectangleSelectionAfterFilter();
 }
 
 // Rectangle Selection System
@@ -2785,6 +2854,9 @@ function calculateRectangleSelectionStats(rect = null) {
   document.getElementById('selectedAreaPercentage').textContent = percentage + '%';
   document.getElementById('selectedAreaLocations').textContent = selectedLocations;
   document.getElementById('rectangleSelectionStats').style.display = 'block';
+  
+  // Show filter information if any filters are active
+  updateRectangleFilterInfo();
 }
 
 function calculateLiveRectangleStats() {
@@ -2809,6 +2881,51 @@ function calculateLiveRectangleStats() {
 
 function isPointInRectangle(x, y, rect) {
   return x >= rect.startX && x <= rect.endX && y >= rect.startY && y <= rect.endY;
+}
+
+function updateRectangleSelectionAfterFilter() {
+  // Update rectangle selection stats if there's an active selection or selection mode is on
+  if (selectedRectangle || (rectangleSelectionEnabled && isDrawingRectangle)) {
+    if (selectedRectangle) {
+      // Update completed selection
+      calculateRectangleSelectionStats();
+    } else if (isDrawingRectangle) {
+      // Update preview selection
+      calculateLiveRectangleStats();
+    }
+  }
+}
+
+function updateRectangleFilterInfo() {
+  const filterInfoDiv = document.getElementById('rectangleFilterInfo');
+  if (!filterInfoDiv) return;
+  
+  const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
+  const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
+  
+  let filterParts = [];
+  
+  // Check for active filters
+  if (selectedTM !== 'all') {
+    const tmOption = document.querySelector(`#heatmapTMSelector option[value="${selectedTM}"]`);
+    const tmText = tmOption ? tmOption.textContent.split(' - ')[0] : selectedTM;
+    filterParts.push(`TM: ${tmText}`);
+  }
+  
+  if (transactionType !== 'all') {
+    filterParts.push(`Type: ${transactionType === 'long' ? 'Long Transactions' : transactionType}`);
+  }
+  
+  if (selectedPickupZone) {
+    filterParts.push(`Zone: ${selectedPickupZone}`);
+  }
+  
+  if (filterParts.length > 0) {
+    filterInfoDiv.innerHTML = `🔍 Filtered by: ${filterParts.join(', ')}`;
+    filterInfoDiv.style.display = 'block';
+  } else {
+    filterInfoDiv.style.display = 'none';
+  }
 }
 
 function updateHeatmapStats() {
@@ -3036,6 +3153,11 @@ function getZoneTransactionCount(zoneName) {
     // Single zone - direct lookup
     return pickupZoneCounts[zoneName] || 0;
   }
+}
+
+function getTotalPickupTransactions() {
+  // Sum all pickup zone transaction counts for percentage calculation
+  return Object.values(pickupZoneCounts).reduce((total, count) => total + count, 0);
 }
 
 function calculatePickupZoneTotals() {
