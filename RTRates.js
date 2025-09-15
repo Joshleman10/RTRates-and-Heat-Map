@@ -606,11 +606,19 @@ function groupByEmployeeAndCalculateMetrics(transactions) {
     const count = tmData.totalPutaways;
     
     if (count > 0) {
+      const avgTravelAisles = tmData.totalTravelAisles / count;
+      const avgTravelDepth = tmData.totalTravelDepth / count;
+      const avgRackHeight = tmData.totalRackHeight / count;
+      
+      // Calculate estimated travel time based on average travel metrics
+      const travelTimeResult = calculateEstimatedTravelTime(avgTravelAisles, avgTravelDepth, avgRackHeight);
+      
       tmData.performanceMetrics = {
         avgPutawayRate: (3600 / (tmData.totalTime / count)).toFixed(2), // Putaways per hour
-        avgTravelAisles: (tmData.totalTravelAisles / count).toFixed(1),
-        avgTravelDepth: (tmData.totalTravelDepth / count).toFixed(1),
-        avgRackHeight: (tmData.totalRackHeight / count).toFixed(1),
+        avgTravelAisles: avgTravelAisles.toFixed(1),
+        avgTravelDepth: avgTravelDepth.toFixed(1),
+        avgRackHeight: avgRackHeight.toFixed(1),
+        avgEstimatedTravelTime: travelTimeResult.totalEstimatedMinutes.toFixed(2), // Average estimated travel time in minutes
         longTransactionPercent: ((tmData.longTransactionCount / count) * 100).toFixed(1)
       };
     }
@@ -669,10 +677,45 @@ function calculateTravelMetrics(transaction) {
   const bayDepth = Math.abs((to?.bay || 0) - (from?.bay || 0));
   const rackLevel = to?.level || 0;
   
+  // Calculate estimated travel time
+  const travelTimeResult = calculateEstimatedTravelTime(aislesTraversed, bayDepth, rackLevel);
+  const estimatedTravelTime = travelTimeResult.totalEstimatedMinutes;
+
   return {
     aislesTraversed: isNaN(aislesTraversed) ? 0 : aislesTraversed,
     bayDepth: isNaN(bayDepth) ? 0 : bayDepth,
-    rackLevel: isNaN(rackLevel) ? 0 : rackLevel
+    rackLevel: isNaN(rackLevel) ? 0 : rackLevel,
+    estimatedTravelTime: estimatedTravelTime
+  };
+}
+
+function calculateEstimatedTravelTime(avgAisles, avgBays, avgHeight) {
+  // Constants for travel time calculation
+  const HORIZONTAL_SPEED_FPS = 7.33;     // 5 MPH = 7.33 feet per second
+  const LIFT_SPEED_FPS = 2.93;           // 2 MPH = 2.93 feet per second
+  const BAY_DISTANCE_FT = 10.5;          // Each bay is 10.5 ft
+  const AISLE_DISTANCE_FT = 10.5;        // Each aisle is 10.5 ft  
+  const RACK_LEVEL_HEIGHT_FT = 6;        // Each rack level is 72 inches (6 ft)
+  
+  // Calculate distances based on averages
+  const totalHorizontalDistance = (avgAisles * AISLE_DISTANCE_FT) + (avgBays * BAY_DISTANCE_FT);
+  const totalVerticalDistance = avgHeight * RACK_LEVEL_HEIGHT_FT;
+  
+  // Calculate time in seconds, then convert to minutes
+  const horizontalTimeSeconds = totalHorizontalDistance / HORIZONTAL_SPEED_FPS;
+  const verticalTimeSeconds = totalVerticalDistance / LIFT_SPEED_FPS;
+  
+  // Add horizontal and vertical time together (sequential travel)
+  const totalTimeSeconds = horizontalTimeSeconds + verticalTimeSeconds;
+  const totalTimeMinutes = totalTimeSeconds / 60;
+  
+  
+  return {
+    horizontalTimeMinutes: horizontalTimeSeconds / 60,
+    verticalTimeMinutes: verticalTimeSeconds / 60,
+    totalEstimatedMinutes: totalTimeMinutes,
+    horizontalDistanceFt: totalHorizontalDistance,
+    verticalDistanceFt: totalVerticalDistance
   };
 }
 
@@ -699,6 +742,7 @@ function displayOverallMetrics() {
   let totalTravelAisles = 0;
   let totalTravelDepth = 0;
   let totalRackHeight = 0;
+  let totalEstimatedTravelTime = 0;
   let tmsWithCLMSData = 0;
   
   Object.values(processedTMData).forEach(tmData => {
@@ -713,12 +757,14 @@ function displayOverallMetrics() {
     totalTravelAisles += parseFloat(tmData.performanceMetrics.avgTravelAisles);
     totalTravelDepth += parseFloat(tmData.performanceMetrics.avgTravelDepth);
     totalRackHeight += parseFloat(tmData.performanceMetrics.avgRackHeight);
+    totalEstimatedTravelTime += parseFloat(tmData.performanceMetrics.avgEstimatedTravelTime);
   });
   
   const avgPutawayRate = tmsWithCLMSData > 0 ? (totalCLMSTPH / tmsWithCLMSData).toFixed(2) : '0.00';
   const avgTravelAisles = totalTMs > 0 ? (totalTravelAisles / totalTMs).toFixed(1) : '0.0';
   const avgTravelDepth = totalTMs > 0 ? (totalTravelDepth / totalTMs).toFixed(1) : '0.0';
   const avgRackHeight = totalTMs > 0 ? (totalRackHeight / totalTMs).toFixed(1) : '0.0';
+  const avgEstimatedTravelTime = totalTMs > 0 ? (totalEstimatedTravelTime / totalTMs).toFixed(2) : '0.00';
   
   // Find TM with lowest TPH
   let lowestTPHTM = 'N/A';
@@ -769,6 +815,7 @@ function displayOverallMetrics() {
   updateElement('avgTravelDistance', `Avg Aisle Travel: ${avgTravelAisles} aisles`);
   updateElement('avgTravelDepth', `Avg Bay Depth: ${avgTravelDepth} bays`);
   updateElement('avgRackHeight', `Avg Rack Height: ${avgRackHeight} ${getHeightLevelLetter(Math.round(parseFloat(avgRackHeight)))}`);
+  updateElement('avgEstimatedTravelTime', `Avg Est Raw Travel Time: ${avgEstimatedTravelTime} minutes`);
   
   updateElement('longTransactionCount', `Long Transactions (>10min): ${totalLongTransactions}`);
   updateElement('longTransactionPercent', `Long Transaction % (of 212s): ${totalTransactions > 0 ? ((totalLongTransactions / totalTransactions) * 100).toFixed(1) : '0.0'}%`);
@@ -886,6 +933,7 @@ function displayIndividualTMMetrics(employeeId) {
   updateElement('tmAvgAisleTravel', `Avg Aisle Travel: ${tmData.performanceMetrics.avgTravelAisles} aisles`);
   updateElement('tmAvgBayDepth', `Avg Bay Depth: ${tmData.performanceMetrics.avgTravelDepth} bays`);
   updateElement('tmAvgRackHeight', `Avg Rack Height: ${tmData.performanceMetrics.avgRackHeight} ${getHeightLevelLetter(Math.round(parseFloat(tmData.performanceMetrics.avgRackHeight)))}`);
+  updateElement('tmAvgEstimatedTravelTime', `Avg Est Raw Travel Time: ${tmData.performanceMetrics.avgEstimatedTravelTime} minutes`);
   
   updateElement('tmLongTransactions', `Long Transactions: ${tmData.longTransactionCount}`);
   updateElement('tmLongTransactionPercent', `Long Transaction %: ${tmData.performanceMetrics.longTransactionPercent}%`);
@@ -1293,7 +1341,7 @@ function clearRTData() {
   // Clear all displays
   const elementsToReset = [
     'totalTransactions', 'totalTMs', 'avgTransactionsPerTM', 'avgTransactionTime', 'avgPutawayRate',
-    'avgTravelDistance', 'avgTravelDepth', 'avgRackHeight', 'longTransactionCount',
+    'avgTravelDistance', 'avgTravelDepth', 'avgRackHeight', 'avgEstimatedTravelTime', 'longTransactionCount',
     'longTransactionPercent', 'avgLongTransactionTime', 'pureRTLongTransactionCount', 
     'pureRTLongTransactionPercent', 'lowestTPHTM', 'mostLongTxTM'
   ];
@@ -2436,6 +2484,19 @@ function drawWarehouseLayout() {
     ctx.fillText('(Click zone again to clear filter)', canvas.width / 2, 58);
   }
   
+  // Add filter indicator if a color filter is selected
+  if (activeColorFilter) {
+    const yOffset = selectedPickupZone ? 75 : 45; // Offset if pickup zone filter is also active
+    ctx.fillStyle = '#ff6b6b'; // Bright red for visibility
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Color Filter: ${activeColorFilter.toUpperCase()}`, canvas.width / 2, yOffset);
+    
+    ctx.fillStyle = '#cccccc'; // Light gray for dark theme
+    ctx.font = '10px Arial';
+    ctx.fillText('(Click button again to clear filter)', canvas.width / 2, yOffset + 13);
+  }
+  
   // Center label for pickup zones area - white for visibility
   ctx.font = '12px Arial';
   ctx.fillStyle = '#ffffff';
@@ -2521,6 +2582,29 @@ function generateHeatmapData() {
       transactionsToAnalyze = transactionsToAnalyze.filter(t => 
         t.pickup.fromLocation === selectedPickupZone
       );
+    }
+  }
+  
+  // Filter by selected rack color if one is selected (exact same pattern as pickup zones)
+  if (activeColorFilter) {
+    if (activeColorFilter === 'green') {
+      // Ground levels: A, B, C
+      transactionsToAnalyze = transactionsToAnalyze.filter(t => {
+        const toLocation = t.putaway.toLocation;
+        return toLocation && (toLocation.includes('-A') || toLocation.includes('-B') || toLocation.includes('-C'));
+      });
+    } else if (activeColorFilter === 'yellow') {
+      // Mid levels: D, G, J  
+      transactionsToAnalyze = transactionsToAnalyze.filter(t => {
+        const toLocation = t.putaway.toLocation;
+        return toLocation && (toLocation.includes('-D') || toLocation.includes('-G') || toLocation.includes('-J'));
+      });
+    } else if (activeColorFilter === 'red') {
+      // High levels: M, P, S
+      transactionsToAnalyze = transactionsToAnalyze.filter(t => {
+        const toLocation = t.putaway.toLocation;
+        return toLocation && (toLocation.includes('-M') || toLocation.includes('-P') || toLocation.includes('-S'));
+      });
     }
   }
   
@@ -2624,6 +2708,11 @@ function generateHeatmapData() {
 function drawHeatmap() {
   if (!warehouseCtx) return;
   
+  // Clear canvas completely
+  warehouseCtx.clearRect(0, 0, warehouseCanvas.width, warehouseCanvas.height);
+  warehouseCtx.fillStyle = '#000000';
+  warehouseCtx.fillRect(0, 0, warehouseCanvas.width, warehouseCanvas.height);
+  
   drawWarehouseLayout();
   
   // Clear previous single transaction coordinates
@@ -2636,6 +2725,7 @@ function drawHeatmap() {
   calculateAndDisplayStats(heatmapData);
   
   // Draw heat map points using proper bay positioning
+  let dotsDrawn = 0;
   Object.entries(heatmapData.counts).forEach(([locationKey, count]) => {
     const detail = heatmapData.details[locationKey];
     const position = getBayPosition(detail.aisle, detail.bay);
@@ -2645,7 +2735,9 @@ function drawHeatmap() {
     }
     
     const color = getHeatmapColor(count, detail.rackLevel);
-    const radius = Math.min(Math.max(count * 1.5 + 3, 4), 15); // Slightly larger for better visibility on black
+    const radius = Math.min(Math.max(count * 1.5 + 3, 4), 15);
+    
+    dotsDrawn++;
     
     // Track single transactions for hover events
     if (count === 1 && detail.transactions && detail.transactions.length > 0) {
@@ -2685,6 +2777,8 @@ function drawHeatmap() {
     }
   });
   
+  console.log(`🟢 DOTS DRAWN: ${dotsDrawn} dots on canvas (filter: ${activeColorFilter || 'none'})`);
+  
   // Draw selection rectangle if active (only completed selections)
   if (selectedRectangle) {
     drawSelectionRectangle();
@@ -2705,6 +2799,7 @@ function drawHeatmap() {
 function setupRectangleSelectionListeners() {
   const rectangleSelectBtn = document.getElementById('rectangleSelectBtn');
   const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
   
   if (rectangleSelectBtn) {
     rectangleSelectBtn.addEventListener('click', toggleRectangleSelection);
@@ -2713,6 +2808,13 @@ function setupRectangleSelectionListeners() {
   if (clearSelectionBtn) {
     clearSelectionBtn.addEventListener('click', clearRectangleSelection);
   }
+  
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', clearAllFilters);
+  }
+  
+  // Setup color filter buttons
+  setupColorFilterListeners();
 }
 
 function toggleRectangleSelection() {
@@ -2752,6 +2854,119 @@ function clearRectangleSelection() {
   document.getElementById('rectangleSelectionStats').style.display = 'none';
   document.getElementById('clearSelectionBtn').style.display = 'none';
   drawHeatmap(); // Redraw without selection rectangle
+}
+
+// Color Filter System
+let activeColorFilter = null; // 'green', 'yellow', 'red', or null
+
+function setupColorFilterListeners() {
+  const filterGreenBtn = document.getElementById('filterGreenBtn');
+  const filterYellowBtn = document.getElementById('filterYellowBtn');
+  const filterRedBtn = document.getElementById('filterRedBtn');
+  
+  // Remove existing listeners to prevent duplicates
+  if (filterGreenBtn) {
+    filterGreenBtn.replaceWith(filterGreenBtn.cloneNode(true));
+    document.getElementById('filterGreenBtn').addEventListener('click', () => toggleColorFilter('green'));
+  }
+  
+  if (filterYellowBtn) {
+    filterYellowBtn.replaceWith(filterYellowBtn.cloneNode(true));
+    document.getElementById('filterYellowBtn').addEventListener('click', () => toggleColorFilter('yellow'));
+  }
+  
+  if (filterRedBtn) {
+    filterRedBtn.replaceWith(filterRedBtn.cloneNode(true));
+    document.getElementById('filterRedBtn').addEventListener('click', () => toggleColorFilter('red'));
+  }
+}
+
+function toggleColorFilter(color) {
+  // Simple toggle: if same color is clicked again, turn off filter
+  if (activeColorFilter === color) {
+    activeColorFilter = null;
+  } else {
+    activeColorFilter = color;
+  }
+  
+  updateColorFilterButtons();
+  drawHeatmap(); // Redraw with color filter
+}
+
+function updateColorFilterButtons() {
+  const buttons = {
+    'green': document.getElementById('filterGreenBtn'),
+    'yellow': document.getElementById('filterYellowBtn'),
+    'red': document.getElementById('filterRedBtn')
+  };
+  
+  // Update button styling - simple pressed/unpressed look
+  Object.keys(buttons).forEach(color => {
+    const btn = buttons[color];
+    if (btn) {
+      const isActive = activeColorFilter === color;
+      
+      if (isActive) {
+        // Active state - pressed look
+        btn.style.backgroundColor = color === 'green' ? '#198754' : color === 'yellow' ? '#e0a800' : '#c82333';
+        btn.style.transform = 'scale(0.95)';
+        btn.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.3)';
+      } else {
+        // Inactive state - normal
+        btn.style.backgroundColor = color === 'green' ? '#28a745' : color === 'yellow' ? '#ffc107' : '#dc3545';
+        btn.style.transform = 'scale(1.0)';
+        btn.style.boxShadow = 'none';
+      }
+    }
+  });
+}
+
+function matchesColorFilter(rackLevel, colorFilter) {
+  // If no color filter is active, show everything
+  if (!colorFilter) return true;
+  
+  // If there's no rack level, don't show it when filtering
+  if (!rackLevel) return false;
+  
+  const level = rackLevel.toUpperCase();
+  
+  switch (colorFilter) {
+    case 'green':
+      return ['A', 'B', 'C'].includes(level);
+    case 'yellow': 
+      return ['D', 'G', 'J'].includes(level);
+    case 'red':
+      return ['M', 'P', 'S'].includes(level);
+    default:
+      return false;
+  }
+}
+
+function clearAllFilters() {
+  // Reset all filters to default state
+  activeColorFilter = null;
+  selectedPickupZone = null;
+  selectedRectangle = null;
+  isDrawingRectangle = false;
+  rectangleSelectionEnabled = false;
+  heatmapImageData = null;
+  
+  // Reset UI elements
+  document.getElementById('heatmapTMSelector').value = 'all';
+  document.getElementById('heatmapTransactionType').value = 'all';
+  document.getElementById('rectangleSelectionStats').style.display = 'none';
+  document.getElementById('clearSelectionBtn').style.display = 'none';
+  
+  // Reset rectangle select button
+  const rectangleBtn = document.getElementById('rectangleSelectBtn');
+  if (rectangleBtn) {
+    rectangleBtn.textContent = '📐 Rectangle Select';
+    rectangleBtn.classList.remove('btn-warning');
+    rectangleBtn.classList.add('btn-secondary');
+  }
+  
+  updateColorFilterButtons();
+  drawHeatmap(); // Redraw with no filters
 }
 
 function drawSelectionRectangle() {
@@ -3340,7 +3555,6 @@ function showWarehouseHeatMap() {
 // Event listeners
 document.getElementById('exportLongTransactionsBtn')?.addEventListener('click', exportLongTransactions);
 document.getElementById('toggleLongTransactionView')?.addEventListener('click', toggleLongTransactionView);
-document.getElementById('refreshHeatmapBtn')?.addEventListener('click', drawHeatmap);
 
 // Page load handler
 function handleRTPageLoad() {
@@ -4036,7 +4250,8 @@ function onTMDataProcessed() {
 let departmentAverages = {
   avgTravelAisles: 0,
   avgTravelDepth: 0,
-  avgRackHeight: 0
+  avgRackHeight: 0,
+  avgEstimatedTravelTime: 0
 };
 
 // Calculate department-wide averages for travel metrics
@@ -4045,24 +4260,27 @@ function calculateDepartmentAverages() {
     return {
       avgTravelAisles: 0,
       avgTravelDepth: 0,
-      avgRackHeight: 0
+      avgRackHeight: 0,
+      avgEstimatedTravelTime: 0
     };
   }
   
   const tmIds = Object.keys(processedTMData);
-  let totalAisles = 0, totalDepth = 0, totalHeight = 0;
+  let totalAisles = 0, totalDepth = 0, totalHeight = 0, totalTravelTime = 0;
   
   tmIds.forEach(tmId => {
     const tmData = processedTMData[tmId];
     totalAisles += parseFloat(tmData.performanceMetrics.avgTravelAisles) || 0;
     totalDepth += parseFloat(tmData.performanceMetrics.avgTravelDepth) || 0;
     totalHeight += parseFloat(tmData.performanceMetrics.avgRackHeight) || 0;
+    totalTravelTime += parseFloat(tmData.performanceMetrics.avgEstimatedTravelTime) || 0;
   });
   
   const averages = {
     avgTravelAisles: totalAisles / tmIds.length,
     avgTravelDepth: totalDepth / tmIds.length,
-    avgRackHeight: totalHeight / tmIds.length
+    avgRackHeight: totalHeight / tmIds.length,
+    avgEstimatedTravelTime: totalTravelTime / tmIds.length
   };
   
   // Store globally and return
@@ -4217,6 +4435,7 @@ function generateUnifiedTMList() {
     const tmAisles = parseFloat(tmData.performanceMetrics.avgTravelAisles) || 0;
     const tmDepth = parseFloat(tmData.performanceMetrics.avgTravelDepth) || 0;
     const tmHeight = parseFloat(tmData.performanceMetrics.avgRackHeight) || 0;
+    const tmEstimatedTravelTime = parseFloat(tmData.performanceMetrics.avgEstimatedTravelTime) || 0;
     
     // Determine overall status
     let statusClass = 'status-good';
@@ -4296,6 +4515,15 @@ function generateUnifiedTMList() {
               <span class="metric-value ${tmHeight < departmentAverages.avgRackHeight ? 'below-average' : ''}">${tmHeight.toFixed(1)}</span>
               <span class="metric-comparison ${tmHeight < departmentAverages.avgRackHeight ? 'comparison-good' : 'comparison-bad'}">
                 ${((tmHeight - departmentAverages.avgRackHeight) / departmentAverages.avgRackHeight * 100).toFixed(0)}% vs dept avg
+              </span>
+            </div>
+          </div>
+          <div class="tm-card-metric-row" title="Department Average: ${departmentAverages.avgEstimatedTravelTime.toFixed(2)} minutes">
+            <span class="metric-label">Raw Travel:</span>
+            <div class="metric-with-comparison">
+              <span class="metric-value ${tmEstimatedTravelTime < departmentAverages.avgEstimatedTravelTime ? 'below-average' : ''}">${tmEstimatedTravelTime.toFixed(2)}min</span>
+              <span class="metric-comparison ${tmEstimatedTravelTime < departmentAverages.avgEstimatedTravelTime ? 'comparison-good' : 'comparison-bad'}">
+                ${((tmEstimatedTravelTime - departmentAverages.avgEstimatedTravelTime) / departmentAverages.avgEstimatedTravelTime * 100).toFixed(0)}% vs dept avg
               </span>
             </div>
           </div>

@@ -96,6 +96,7 @@
           <p id="avgTravelDistance"></p>
           <p id="avgTravelDepth"></p>
           <p id="avgRackHeight"></p>
+          <p id="avgEstimatedTravelTime"></p>
         </div>
         <div class="metrics-category">
           <h3>Issue Tracking</h3>
@@ -160,9 +161,9 @@
             <option value="long">Long Transactions Only (>10min)</option>
           </select>
         </div>
-        <button id="refreshHeatmapBtn" class="btn btn-primary">🔄 Update Heat Map</button>
         <button id="rectangleSelectBtn" class="btn btn-secondary">📐 Rectangle Select</button>
         <button id="clearSelectionBtn" class="btn btn-secondary" style="display: none;">✖ Clear Selection</button>
+        <button id="clearAllBtn" class="btn btn-secondary">🔄 Clear All Filters</button>
       </div>
       <div class="heatmap-info-bar"
         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 2px solid #dee2e6;">
@@ -227,6 +228,22 @@
                 (M,P,S):
               </span>
               <span id="highTotal" style="font-weight: bold; color: #212529;">0</span>
+            </div>
+          </div>
+          
+          <!-- Color Filter Controls -->
+          <div class="stat-card" id="colorFilterControls" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Color Filters</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button id="filterGreenBtn" class="color-filter-btn" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                🟢 Green Only
+              </button>
+              <button id="filterYellowBtn" class="color-filter-btn" style="background: #ffc107; color: #212529; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                🟡 Yellow Only
+              </button>
+              <button id="filterRedBtn" class="color-filter-btn" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                🔴 Red Only
+              </button>
             </div>
           </div>
           
