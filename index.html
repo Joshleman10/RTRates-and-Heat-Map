@@ -147,51 +147,66 @@
         <h3 class="section-title-main">Warehouse Transaction Heat Map</h3>
         <p class="section-description">Visual representation of transaction patterns across warehouse locations</p>
       </div>
-      <div class="heatmap-controls">
-        <div class="heatmap-control-group">
-          <label for="heatmapTMSelector">View Transactions For:</label>
-          <select id="heatmapTMSelector" class="heatmap-dropdown">
-            <option value="all">All Team Members</option>
-          </select>
+      <div class="heatmap-controls" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+        <!-- Left side controls -->
+        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+          <div class="heatmap-control-group">
+            <label for="heatmapTMSelector">View Transactions For:</label>
+            <select id="heatmapTMSelector" class="heatmap-dropdown">
+              <option value="all">All Team Members</option>
+            </select>
+          </div>
+          <div class="heatmap-control-group">
+            <label for="heatmapTransactionType">Transaction Type:</label>
+            <select id="heatmapTransactionType" class="heatmap-dropdown">
+              <option value="all">All Transactions</option>
+              <option value="long">Long Transactions Only (>10min)</option>
+            </select>
+          </div>
+          <button id="rectangleSelectBtn" class="btn btn-secondary">📐 Rectangle Select</button>
+          <button id="clearSelectionBtn" class="btn btn-secondary" style="display: none;">✖ Clear Selection</button>
+          <button id="clearAllBtn" class="btn btn-secondary">🔄 Clear All Filters</button>
         </div>
-        <div class="heatmap-control-group">
-          <label for="heatmapTransactionType">Transaction Type:</label>
-          <select id="heatmapTransactionType" class="heatmap-dropdown">
-            <option value="all">All Transactions</option>
-            <option value="long">Long Transactions Only (>10min)</option>
-          </select>
-        </div>
-        <button id="rectangleSelectBtn" class="btn btn-secondary">📐 Rectangle Select</button>
-        <button id="clearSelectionBtn" class="btn btn-secondary" style="display: none;">✖ Clear Selection</button>
-        <button id="clearAllBtn" class="btn btn-secondary">🔄 Clear All Filters</button>
+
       </div>
       <div class="heatmap-info-bar"
         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 2px solid #dee2e6;">
-        <div class="rack-height-legend" style="display: flex; align-items: center; gap: 25px;">
-          <div class="legend-title" style="color: #212529; font-weight: bold; margin-right: 15px; font-size: 16px;">Rack
-            Height Legend:</div>
-          <span class="legend-item"
-            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
-            <span class="legend-color"
-              style="width: 14px; height: 14px; background: #00ff00; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>Ground
-            (A, B, C)
-          </span>
-          <span class="legend-item"
-            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
-            <span class="legend-color"
-              style="width: 14px; height: 14px; background: #ffff00; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>Mid
-            (D, G, J)
-          </span>
-          <span class="legend-item"
-            style="display: flex; align-items: center; gap: 8px; color: #212529; font-weight: 500;">
-            <span class="legend-color"
-              style="width: 14px; height: 14px; background: #ff0000; border-radius: 50%; display: inline-block; border: 2px solid #333; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></span>High
-            (M, P, S)
-          </span>
+        <div class="rack-height-legend" style="display: flex; align-items: center; gap: 15px;">
+          <div class="legend-title" style="color: #212529; font-weight: bold; margin-right: 15px; font-size: 16px;">Rack Height Legend (Click to filter):</div>
+          <button id="filterGreenBtn" class="color-filter-btn"
+            style="background: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+            🟢 Ground (A, B, C)
+          </button>
+          <button id="filterYellowBtn" class="color-filter-btn"
+            style="background: #ffc107; color: #212529; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+            🟡 Mid (D, G, J)
+          </button>
+          <button id="filterRedBtn" class="color-filter-btn"
+            style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
+            🔴 High (M, P, S)
+          </button>
         </div>
-        <div class="hover-details" id="hoverDetails"
-          style="color: #212529; font-weight: bold; font-size: 14px; min-width: 250px; text-align: right;">
-          Hover over single transactions to see location
+
+        <!-- Right side container with fixed positioning -->
+        <div style="display: flex; align-items: center; gap: 15px; min-width: 600px; justify-content: flex-end;">
+          <!-- Rectangle Selection Stats -->
+          <div class="stat-card" id="rectangleSelectionStats" style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 6px; padding: 8px 12px; display: none; width: 400px; flex-shrink: 0; height: 32px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; font-size: 14px; white-space: nowrap; height: 100%;">
+              <span style="color: #0c5460; font-weight: bold;">📐 Selected:</span>
+              <span style="color: #0c5460;"><span id="selectedAreaTransactions" style="font-weight: bold;">0</span> transactions</span>
+              <span style="color: #0c5460;">(<span id="selectedAreaPercentage" style="font-weight: bold;">0%</span>)</span>
+              <span style="color: #0c5460;"><span id="selectedAreaLocations" style="font-weight: bold;">0</span> locations</span>
+              <span id="rectangleFilterInfo" style="color: #0c5460; font-style: italic; font-size: 12px; margin-left: 10px;">
+                <!-- Filter information will be populated here -->
+              </span>
+            </div>
+          </div>
+
+          <!-- Hover details with fixed width -->
+          <div class="hover-details" id="hoverDetails"
+            style="color: #212529; font-weight: bold; font-size: 14px; width: 280px; text-align: right; flex-shrink: 0;">
+            Hover over single transactions to see location
+          </div>
         </div>
       </div>
       <div class="warehouse-display-container"
@@ -199,6 +214,7 @@
         <!-- Left sidebar with statistics -->
         <div class="warehouse-stats-sidebar"
           style="display: flex; flex-direction: column; gap: 15px; min-width: 200px;">
+          
           <!-- Rack Level Totals -->
           <div class="stat-card" id="rackLevelTotals"
             style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
@@ -231,41 +247,27 @@
             </div>
           </div>
           
-          <!-- Color Filter Controls -->
-          <div class="stat-card" id="colorFilterControls" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
-            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Color Filters</h4>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <button id="filterGreenBtn" class="color-filter-btn" style="background: #28a745; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                🟢 Green Only
-              </button>
-              <button id="filterYellowBtn" class="color-filter-btn" style="background: #ffc107; color: #212529; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                🟡 Yellow Only
-              </button>
-              <button id="filterRedBtn" class="color-filter-btn" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
-                🔴 Red Only
-              </button>
+          <!-- Additional Metrics -->
+          <div class="stat-card" id="additionalMetrics" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Additional Metrics</h4>
+            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="color: #212529;">Hottest Aisle:</span>
+              <span id="hottestAisleStat" style="font-weight: bold; color: #212529;">-</span>
+            </div>
+            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="color: #212529;">&gt;21 Bays Deep:</span>
+              <span id="beyondBreezewayCombo" style="font-weight: bold; color: #212529;">0 (0%)</span>
             </div>
           </div>
-          
-          <!-- Rectangle Selection Stats -->
-          <div class="stat-card" id="rectangleSelectionStats" style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 8px; padding: 15px; display: none;">
-            <h4 style="margin: 0 0 10px 0; color: #0c5460; font-size: 14px; font-weight: bold;">📐 Selected Area</h4>
-            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="color: #0c5460;">Transactions:</span>
-              <span id="selectedAreaTransactions" style="font-weight: bold; color: #0c5460;">0</span>
-            </div>
-            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="color: #0c5460;">% of Total:</span>
-              <span id="selectedAreaPercentage" style="font-weight: bold; color: #0c5460;">0%</span>
-            </div>
-            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="color: #0c5460;">Locations:</span>
-              <span id="selectedAreaLocations" style="font-weight: bold; color: #0c5460;">0</span>
-            </div>
-            <div id="rectangleFilterInfo" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #b3d9e6; font-size: 11px; color: #0c5460; font-style: italic;">
-              <!-- Filter information will be populated here -->
+
+          <!-- Travel by Pickup Zone -->
+          <div class="stat-card" id="pickupZoneTravelTimes" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Travel by Pickup Zone</h4>
+            <div id="pickupZoneList" style="display: flex; flex-direction: column; gap: 4px;">
+              <!-- Pickup zone travel times will be populated here -->
             </div>
           </div>
+
         </div>
 
         <!-- Main warehouse map -->
@@ -276,9 +278,6 @@
           <div id="warehouseTooltip" class="warehouse-tooltip"></div>
         </div>
       </div>
-      <div class="heatmap-stats" id="heatmapStats">
-        <!-- Statistics will be populated dynamically -->
-      </div>
     </div>
 
 
@@ -286,7 +285,7 @@
     <!-- Action Buttons -->
     <div class="button-container">
       <button onclick="location.reload()" id="clearButton" style="display: none;">
-        🔄 Reset
+        🔄 Reload Page
       </button>
     </div>
 

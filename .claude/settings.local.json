@@ -80,7 +80,8 @@
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
-      "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)"
+      "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
+      "Read(//c/Users/jeshleman1/Downloads/**)"
     ],
     "deny": [],
     "ask": []

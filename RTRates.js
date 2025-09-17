@@ -737,8 +737,9 @@ function displayOverallMetrics() {
   const totalTransactions = rtTransactionData.length;
   const totalLongTransactions = longTransactions.length;
   
-  // Calculate overall averages - only use CLMS TPH data
-  let totalCLMSTPH = 0;
+  // Calculate overall averages - use total transactions / total hours from CLMS data
+  let totalCLMSTransactions = 0;
+  let totalCLMSHours = 0;
   let totalTravelAisles = 0;
   let totalTravelDepth = 0;
   let totalRackHeight = 0;
@@ -748,10 +749,18 @@ function displayOverallMetrics() {
   Object.values(processedTMData).forEach(tmData => {
     const hasLaborData = tmData.actualLaborHours !== undefined;
     
-    // Only include TMs with CLMS TPH data in the average
+    // Only include TMs with CLMS data in the totals
     if (hasLaborData && tmData.laborSystemTPH) {
-      totalCLMSTPH += tmData.laborSystemTPH;
-      tmsWithCLMSData++;
+      // Find the matching labor record to get totalTransactions and totalHours
+      const matchingLaborRecord = Object.values(laborHoursData || {}).find(record => 
+        record.totalHours === tmData.actualLaborHours && record.tph === tmData.laborSystemTPH
+      );
+      
+      if (matchingLaborRecord) {
+        totalCLMSTransactions += matchingLaborRecord.totalTransactions || 0;
+        totalCLMSHours += matchingLaborRecord.totalHours || 0;
+        tmsWithCLMSData++;
+      }
     }
     
     totalTravelAisles += parseFloat(tmData.performanceMetrics.avgTravelAisles);
@@ -760,7 +769,8 @@ function displayOverallMetrics() {
     totalEstimatedTravelTime += parseFloat(tmData.performanceMetrics.avgEstimatedTravelTime);
   });
   
-  const avgPutawayRate = tmsWithCLMSData > 0 ? (totalCLMSTPH / tmsWithCLMSData).toFixed(2) : '0.00';
+  // Calculate TPH as total transactions / total hours (matches CLMS calculation)
+  const avgPutawayRate = totalCLMSHours > 0 ? (totalCLMSTransactions / totalCLMSHours).toFixed(2) : '0.00';
   const avgTravelAisles = totalTMs > 0 ? (totalTravelAisles / totalTMs).toFixed(1) : '0.0';
   const avgTravelDepth = totalTMs > 0 ? (totalTravelDepth / totalTMs).toFixed(1) : '0.0';
   const avgRackHeight = totalTMs > 0 ? (totalRackHeight / totalTMs).toFixed(1) : '0.0';
@@ -1769,7 +1779,7 @@ const WAREHOUSE_CONFIG = {
   },
   // Pickup zones positioned at bottom, directly across from their paired aisles
   pickupZones: {
-    'REC6701': { pairedAisle: 60, color: '#17a2b8' },
+    'REC6701': { pairedAisle: 59, color: '#17a2b8' },
     'REC7401': { pairedAisle: 49, color: '#17a2b8' },
     'REC7201': { pairedAisle: 54, color: '#17a2b8' },
     'REC7701': { pairedAisle: 44, color: '#17a2b8' },
@@ -3144,14 +3154,9 @@ function updateRectangleFilterInfo() {
 }
 
 function updateHeatmapStats() {
-  const statsContainer = document.getElementById('heatmapStats');
-  if (!statsContainer || !currentHeatmapData) return;
+  if (!currentHeatmapData) return;
   
   const data = currentHeatmapData;
-  const locationCount = Object.keys(data.counts).length;
-  const maxTransactions = Math.max(...Object.values(data.counts), 0);
-  const avgTransactionsPerLocation = locationCount > 0 ? 
-    (data.totalTransactions / locationCount).toFixed(1) : '0.0';
   
   // Find hottest aisle (aggregate by aisle number)
   const aisleTransactions = {};
@@ -3176,27 +3181,140 @@ function updateHeatmapStats() {
     }
   });
   
-  const html = `
-    <div class="heatmap-stat-card">
-      <div class="heatmap-stat-title">Total Transactions</div>
-      <div class="heatmap-stat-value">${data.totalTransactions}</div>
-    </div>
-    <div class="heatmap-stat-card">
-      <div class="heatmap-stat-title">Locations Used</div>
-      <div class="heatmap-stat-value">${locationCount}</div>
-    </div>
-    <div class="heatmap-stat-card">
-      <div class="heatmap-stat-title">Avg per Location</div>
-      <div class="heatmap-stat-value">${avgTransactionsPerLocation}</div>
-    </div>
-    <div class="heatmap-stat-card">
-      <div class="heatmap-stat-title">Hottest Aisle</div>
-      <div class="heatmap-stat-value">${hottestAisle.aisle !== 'None' ? `Aisle ${hottestAisle.aisle}` : 'None'}</div>
-      <div class="heatmap-stat-title">${hottestAisle.count} transactions (${hottestAisle.percentage}%)</div>
-    </div>
-  `;
+  // Calculate transactions beyond breezeway (bay > 21)
+  let beyondBreezewayCount = 0;
+  Object.entries(data.counts).forEach(([key, count]) => {
+    const detail = data.details[key];
+    const bayNumber = detail.bay;
+    
+    if (bayNumber > 21) {
+      beyondBreezewayCount += count;
+    }
+  });
   
-  statsContainer.innerHTML = html;
+  const beyondBreezewayPercent = data.totalTransactions > 0 ?
+    ((beyondBreezewayCount / data.totalTransactions) * 100).toFixed(1) : '0.0';
+
+  // Update the sidebar metrics
+  const hottestAisleElement = document.getElementById('hottestAisleStat');
+  const beyondBreezewayComboElement = document.getElementById('beyondBreezewayCombo');
+
+  if (hottestAisleElement) {
+    hottestAisleElement.textContent = hottestAisle.aisle !== 'None' ?
+      `${hottestAisle.aisle} (${hottestAisle.count}, ${hottestAisle.percentage}%)` : 'None';
+  }
+
+  if (beyondBreezewayComboElement) {
+    beyondBreezewayComboElement.textContent = `${beyondBreezewayCount} (${beyondBreezewayPercent}%)`;
+  }
+
+  // Update pickup zone travel table
+  updatePickupZoneMetric();
+}
+
+function updatePickupZoneMetric() {
+  // Calculate pickup zone estimated travel times using raw transaction data
+  const pickupZoneTravelTimes = {};
+  let totalEstimatedTravelTime = 0;
+  let totalTransactionsWithEstimates = 0;
+
+  if (rtTransactionData && rtTransactionData.length > 0) {
+    rtTransactionData.forEach(transaction => {
+      const pickupZone = transaction.pickup?.fromLocation;
+      const travelMetrics = calculateTravelMetrics(transaction);
+
+      // Calculate estimated travel time from travel metrics components
+      let estimatedTravelTime = 0;
+      if (travelMetrics && travelMetrics.aislesTraversed >= 0 && travelMetrics.bayDepth >= 0 && travelMetrics.rackLevel >= 0) {
+        const travelTimeResult = calculateEstimatedTravelTime(
+          travelMetrics.aislesTraversed,
+          travelMetrics.bayDepth,
+          travelMetrics.rackLevel
+        );
+        estimatedTravelTime = travelTimeResult ? travelTimeResult.totalEstimatedMinutes : 0;
+      }
+
+      if (pickupZone && estimatedTravelTime > 0) {
+        if (!pickupZoneTravelTimes[pickupZone]) {
+          pickupZoneTravelTimes[pickupZone] = { totalTime: 0, count: 0 };
+        }
+        pickupZoneTravelTimes[pickupZone].totalTime += estimatedTravelTime;
+        pickupZoneTravelTimes[pickupZone].count += 1;
+
+        // Track overall totals for comparison
+        totalEstimatedTravelTime += estimatedTravelTime;
+        totalTransactionsWithEstimates += 1;
+      }
+    });
+  }
+
+  // Calculate overall average estimated travel time
+  const overallAvgEstimatedTravelTime = totalTransactionsWithEstimates > 0 ?
+    (totalEstimatedTravelTime / totalTransactionsWithEstimates) : 0;
+
+  // Get all pickup zones and order them by their paired aisle (left to right on map)
+  const orderedZones = Object.entries(WAREHOUSE_CONFIG.pickupZones)
+    .map(([zoneName, config]) => ({
+      name: zoneName,
+      pairedAisle: config.pairedAisle,
+      isCombo: config.zones !== undefined,
+      zones: config.zones || [zoneName]
+    }))
+    .sort((a, b) => a.pairedAisle - b.pairedAisle);
+
+  // Build the pickup zone travel table
+  const pickupZoneListElement = document.getElementById('pickupZoneList');
+  if (pickupZoneListElement) {
+    pickupZoneListElement.innerHTML = '';
+
+    orderedZones.forEach(zoneInfo => {
+      // Calculate travel data for this zone (handling combo zones)
+      let zoneData = { totalTime: 0, count: 0 };
+
+      zoneInfo.zones.forEach(zoneName => {
+        if (pickupZoneTravelTimes[zoneName]) {
+          zoneData.totalTime += pickupZoneTravelTimes[zoneName].totalTime;
+          zoneData.count += pickupZoneTravelTimes[zoneName].count;
+        }
+      });
+
+      // Create row for this zone
+      const zoneRow = document.createElement('div');
+      zoneRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 2px 0; font-size: 12px;';
+
+      const zoneName = document.createElement('span');
+      zoneName.style.cssText = 'color: #212529; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1;';
+      zoneName.textContent = zoneInfo.name;
+
+      const zoneValue = document.createElement('span');
+      zoneValue.style.cssText = 'color: #212529; font-weight: bold; white-space: nowrap; margin-left: 8px; flex-shrink: 0;';
+
+      if (zoneData.count > 0) {
+        const avgTime = zoneData.totalTime / zoneData.count;
+        const comparisonPercent = overallAvgEstimatedTravelTime > 0 ?
+          (((avgTime - overallAvgEstimatedTravelTime) / overallAvgEstimatedTravelTime) * 100) : 0;
+
+        const comparisonText = Math.abs(comparisonPercent) >= 1 ?
+          (comparisonPercent > 0 ? ` +${comparisonPercent.toFixed(0)}%` : ` ${comparisonPercent.toFixed(0)}%`) : '';
+
+        zoneValue.textContent = `${avgTime.toFixed(1)}m${comparisonText}`;
+
+        // Color code based on performance
+        if (comparisonPercent > 10) {
+          zoneValue.style.color = '#dc3545'; // Red for slow zones
+        } else if (comparisonPercent < -10) {
+          zoneValue.style.color = '#28a745'; // Green for fast zones
+        }
+      } else {
+        zoneValue.textContent = 'No data';
+        zoneValue.style.color = '#6c757d';
+      }
+
+      zoneRow.appendChild(zoneName);
+      zoneRow.appendChild(zoneValue);
+      pickupZoneListElement.appendChild(zoneRow);
+    });
+  }
 }
 
 function handleHeatmapMouseMove(event) {
@@ -4244,6 +4362,7 @@ function onTMDataProcessed() {
   showLaborHoursSection();
   calculateDepartmentAverages();
   generateUnifiedTMList();
+  updatePickupZoneMetric(); // Calculate pickup zone metrics when data is loaded
 }
 
 // Department averages for STU comparison
