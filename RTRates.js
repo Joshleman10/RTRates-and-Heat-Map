@@ -4804,8 +4804,11 @@ function showLongTransactionDetails(tmId, longTxDetails) {
                 <div style="font-weight: bold; color: #212529; margin-bottom: 0.25rem;">
                   ${tx.putaway.quantity || 'N/A'} units
                 </div>
-                <div style="font-size: 0.9rem; color: #6c757d;">
+                <div style="font-size: 0.9rem; color: #6c757d; margin-bottom: 0.25rem;">
                   ${tx.pickup?.fromLocation || 'N/A'} → ${tx.putaway.toLocation}
+                </div>
+                <div style="font-size: 0.9rem; color: #dc3545; font-weight: 600;">
+                  ⏱️ ${((tx.putaway.timeToExecute || 0) / 60).toFixed(1)} minutes
                 </div>
               </div>
             </div>
