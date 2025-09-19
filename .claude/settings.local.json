@@ -81,7 +81,12 @@
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
       "Read(/C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\RTRates/**)",
-      "Read(//c/Users/jeshleman1/Downloads/**)"
+      "Read(//c/Users/jeshleman1/Downloads/**)",
+      "Bash(dir \"C:\\Users\\jeshleman1\\OneDrive - Chewy.com, LLC\\Desktop\\My Apps\\IB-Tool-Browser\\hoursSpendBreakdown\")",
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/hoursSpendBreakdown/**)",
+      "Bash(dir:*)",
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/OBHoursComparison/**)",
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/airVsGroundAnalyzer/**)"
     ],
     "deny": [],
     "ask": []

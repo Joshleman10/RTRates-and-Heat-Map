@@ -377,12 +377,31 @@ function processRTTransactions(rawData) {
       const isValidPickupZone = validPickupZones.some(zone => fromLocation.includes(zone));
       return validTransactionType && validLocations && isValidPickupZone;
     }
-    
-    // 212 transactions just need basic validation
+
+    // 212 transactions must come from RPUT locations (filter out troubleshooting/one-off transactions)
+    if (transactionType === 212 || transactionType === "212") {
+      const isFromRPUT = fromLocation.startsWith('RPUT');
+      return validTransactionType && validLocations && isFromRPUT;
+    }
+
     return validTransactionType && validLocations;
   });
 
+  // Count how many 212 transactions were filtered out for not being from RPUT
+  const total212s = rawData.filter(row => {
+    const transactionType = row["Transaction Type"] || row["A"] || "";
+    return transactionType === 212 || transactionType === "212";
+  }).length;
+
+  const rput212s = filteredTransactions.filter(row => {
+    const transactionType = row["Transaction Type"] || row["A"] || "";
+    return transactionType === 212 || transactionType === "212";
+  }).length;
+
+  const filteredOut212s = total212s - rput212s;
+
   console.log(`✅ Filtered to ${filteredTransactions.length} valid transactions (from ${rawData.length} total)`);
+  console.log(`🔍 212 Transaction filtering: ${rput212s} RPUT transactions kept, ${filteredOut212s} non-RPUT transactions filtered out`);
   
   if (filteredTransactions.length === 0) {
     console.error('❌ No valid transactions found after filtering!');
@@ -420,6 +439,41 @@ function processRTTransactions(rawData) {
         // Save to localStorage
         rtTransactionData = processedTransactions;
         localStorage.setItem(RT_STORAGE_KEY, JSON.stringify(rtTransactionData));
+
+        // ✅ CONFIRMATION: All transactions should now be RPUT-based
+        console.log('✅ CONFIRMING RPUT-ONLY FILTERING RESULTS:');
+
+        let rputCount = 0;
+        let nonRputCount = 0;
+        const rputSample = [];
+
+        rtTransactionData.forEach(transaction => {
+          const fromLocation = (transaction.putaway.fromLocation || "").toString().toUpperCase();
+
+          if (fromLocation.startsWith('RPUT')) {
+            rputCount++;
+            if (rputSample.length < 5) {
+              rputSample.push({
+                fromLocation: fromLocation,
+                toLocation: transaction.putaway.toLocation,
+                employeeId: transaction.putaway.employeeId,
+                timeToExecute: transaction.putaway.timeToExecute
+              });
+            }
+          } else {
+            nonRputCount++;
+            console.warn(`⚠️  Unexpected non-RPUT transaction found: ${fromLocation} → ${transaction.putaway.toLocation}`);
+          }
+        });
+
+        console.log(`📊 FINAL TRANSACTION SUMMARY:`);
+        console.log(`✅ All transactions are RPUT-based: ${rputCount} transactions`);
+        if (nonRputCount > 0) {
+          console.error(`❌ ERROR: ${nonRputCount} non-RPUT transactions found despite filtering!`);
+        }
+
+        console.log('\n✅ RPUT TRANSACTION SAMPLE:');
+        console.table(rputSample);
         
         // Set transaction data flag
         hasTransactionData = true;
