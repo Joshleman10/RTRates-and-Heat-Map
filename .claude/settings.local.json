@@ -86,7 +86,10 @@
       "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/hoursSpendBreakdown/**)",
       "Bash(dir:*)",
       "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/OBHoursComparison/**)",
-      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/airVsGroundAnalyzer/**)"
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/airVsGroundAnalyzer/**)",
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/WTDvsSOP/**)",
+      "Bash(cat:*)",
+      "Read(//c/Users/jeshleman1/OneDrive - Chewy.com, LLC/Desktop/My Apps/IB-Tool-Browser/**)"
     ],
     "deny": [],
     "ask": []

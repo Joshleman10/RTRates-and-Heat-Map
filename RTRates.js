@@ -514,19 +514,22 @@ function matchTransactionPairs(filteredTransactions) {
     const type = t["Transaction Type"] || t["A"] || "";
     return type === 211 || type === "211";
   });
-  
+
   const transaction212s = filteredTransactions.filter(t => {
     const type = t["Transaction Type"] || t["P"] || "";
     return type === 212 || type === "212";
   });
-  
+
   const pairedTransactions = [];
   const unmatchedTransactions = [];
-  
-  // Match 211s with 212s by From LP
+
+  // ✅ NEW LOGIC: Only use the LAST instance of each unique LP
+  // Group 212 transactions by LP and find the latest one for each LP
+  const lpGroups = {};
+
   transaction212s.forEach(t212 => {
     const fromLP = t212["From LP"] || t212["M"] || "";  // Column M
-    
+
     if (!fromLP) {
       unmatchedTransactions.push({
         ...t212,
@@ -535,13 +538,53 @@ function matchTransactionPairs(filteredTransactions) {
       });
       return;
     }
-    
+
+    // Parse start date and time to determine chronological order
+    const startDate = t212["Start Date"] || "";
+    const startTime = t212["Start Time"] || "";
+    const dateTimeStr = `${startDate} ${startTime}`;
+    const dateTime = new Date(dateTimeStr);
+
+    // Group by LP, keeping track of the latest transaction for each
+    if (!lpGroups[fromLP]) {
+      lpGroups[fromLP] = {
+        transactions: [],
+        latestTransaction: null,
+        latestDateTime: null
+      };
+    }
+
+    lpGroups[fromLP].transactions.push(t212);
+
+    // Update latest transaction if this one is more recent
+    if (!lpGroups[fromLP].latestDateTime || dateTime > lpGroups[fromLP].latestDateTime) {
+      lpGroups[fromLP].latestTransaction = t212;
+      lpGroups[fromLP].latestDateTime = dateTime;
+    }
+  });
+
+  console.log(`📊 LP Transaction Summary:`);
+  console.log(`📦 Total unique LPs: ${Object.keys(lpGroups).length}`);
+
+  let totalOriginalTransactions = 0;
+  let duplicateTransactionsFiltered = 0;
+
+  // Process only the latest transaction for each unique LP
+  Object.entries(lpGroups).forEach(([fromLP, lpGroup]) => {
+    const t212 = lpGroup.latestTransaction;
+    totalOriginalTransactions += lpGroup.transactions.length;
+
+    if (lpGroup.transactions.length > 1) {
+      duplicateTransactionsFiltered += (lpGroup.transactions.length - 1);
+      console.log(`🔄 LP ${fromLP}: Using latest of ${lpGroup.transactions.length} transactions`);
+    }
+
     // Find matching 211 transaction
     const matching211 = transaction211s.find(t211 => {
       const t211_fromLP = t211["From LP"] || t211["M"] || "";
       return t211_fromLP === fromLP;
     });
-    
+
     if (matching211) {
       // Create paired transaction
       const pairedTransaction = {
@@ -556,7 +599,7 @@ function matchTransactionPairs(filteredTransactions) {
           itemNumber: matching211["Item Number"] || "",
           quantity: parseInt(matching211["Quantity"] || 0)
         },
-        // 212 Transaction (Putaway)
+        // 212 Transaction (Putaway) - ONLY THE LATEST ONE
         putaway: {
           employeeId: t212["Employee ID"] || t212["G"] || "",
           fromLocation: t212["From Location"] || t212["L"] || "",
@@ -569,9 +612,11 @@ function matchTransactionPairs(filteredTransactions) {
         },
         fromLP: fromLP,
         totalTime: (parseFloat(matching211["Time to Execute"] || 0) + parseFloat(t212["Time to Execute"] || 0)),
-        isMatched: true
+        isMatched: true,
+        // Add metadata about duplicate filtering
+        duplicateCount: lpGroup.transactions.length - 1
       };
-      
+
       pairedTransactions.push(pairedTransaction);
     } else {
       unmatchedTransactions.push({
@@ -581,8 +626,13 @@ function matchTransactionPairs(filteredTransactions) {
       });
     }
   });
-  
-  
+
+  console.log(`🔢 Transaction Filtering Results:`);
+  console.log(`   Original 212 transactions: ${totalOriginalTransactions}`);
+  console.log(`   Duplicate transactions filtered: ${duplicateTransactionsFiltered}`);
+  console.log(`   Final unique transactions: ${pairedTransactions.length}`);
+  console.log(`   Filtering reduced count by: ${((duplicateTransactionsFiltered / totalOriginalTransactions) * 100).toFixed(1)}%`);
+
   return pairedTransactions;
 }
 
@@ -4390,10 +4440,13 @@ document.addEventListener('DOMContentLoaded', function() {
       
       
     } catch (error) {
-      
+      console.error('Error processing labor data from clipboard:', error);
+
       // Provide user-friendly error messages
       if (error.name === 'NotAllowedError') {
+        alert('Clipboard access denied. Please allow clipboard access in your browser settings and try again.');
       } else {
+        alert(`Error processing labor data: ${error.message}\n\nPlease ensure you have copied the complete CLMS labor report to your clipboard.`);
       }
     }
   }
