@@ -1,4 +1,7 @@
 // RT Productivity Analysis JavaScript
+// Debug target - set to null to disable debugging
+const DEBUG_TARGET_TM = 'DROBINSO48';
+
 let rtTransactionData = [];
 let rawTransactionData = []; // Store raw Excel data for time range calculations
 let warehouseLayoutData = {};
@@ -9,6 +12,7 @@ let pureRTLongTransactions = []; // Track Pure RT Long transactions (from RPUT l
 let selectedTMId = null;
 let singleTransactionCoordinates = []; // Track individual transaction positions for hover events
 let currentUserUsername = ''; // Store username extracted from file path for STU forms
+let lcFlaggedTMs = new Set(); // Track TMs flagged as Learning Curve
 
 // Data loading tracking
 let hasTransactionData = false;
@@ -17,6 +21,7 @@ let hasCLMSData = false;
 // Storage keys
 const RT_STORAGE_KEY = 'rtRates_transactionData';
 const RT_WAREHOUSE_LAYOUT_KEY = 'rtRates_warehouseLayout';
+// Note: LC flags are no longer persisted - they reset each session
 
 // Page refresh detection
 window.addEventListener('beforeunload', () => {
@@ -28,6 +33,8 @@ function checkAndInitializePage() {
   if (hasTransactionData && hasCLMSData) {
     // Both data sources are available - initialize the page
     initializeFullAnalysis();
+    // Initialize LC functionality
+    initializeLCFunctionality();
   }
 }
 
@@ -154,9 +161,6 @@ function handleFile(event) {
   
   // Log file details for debugging
   const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-  console.log(`📁 Processing file: ${file.name}`);
-  console.log(`📏 File size: ${fileSizeMB}MB`);
-  console.log(`📅 File modified: ${new Date(file.lastModified)}`);
   
   // Warn for very large files
   if (file.size > 100 * 1024 * 1024) { // 100MB+
@@ -181,27 +185,20 @@ function handleFile(event) {
   reader.onload = function (e) {
     try {
       showLoadingProgress('Processing Excel data...', 25);
-      console.log(`🔄 Started reading file at ${new Date().toISOString()}`);
-      
       // Add slight delay for smoother visual progress
       setTimeout(() => {
         const data = new Uint8Array(e.target.result);
-        console.log(`📦 File buffer size: ${data.length} bytes`);
         showLoadingProgress('Reading workbook...', 35);
-        
+
         setTimeout(() => {
           try {
-            console.log(`📖 Starting workbook parsing at ${new Date().toISOString()}`);
             const workbook = XLSX.read(data, { type: 'array' });
-            console.log(`✅ Workbook parsed successfully. Sheets: ${workbook.SheetNames.join(', ')}`);
             showLoadingProgress('Extracting data...', 45);
-            
+
             setTimeout(() => {
               try {
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                console.log(`📊 Converting sheet "${workbook.SheetNames[0]}" to JSON...`);
                 const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-                console.log(`✅ Extracted ${rows.length} rows from Excel`);
                 showLoadingProgress('Analyzing transactions...', 55);
 
                 // Process RT transactions with progress updates
@@ -332,7 +329,6 @@ function displayFileInfo(file) {
 }
 
 function processRTTransactions(rawData) {
-  console.log(`🚀 processRTTransactions started with ${rawData.length} rows at ${new Date().toISOString()}`);
   showLoadingProgress('Processing transactions...', 65);
   
   // Store raw data globally for time range calculations
@@ -340,8 +336,6 @@ function processRTTransactions(rawData) {
   
   // Log sample data structure for debugging
   if (rawData.length > 0) {
-    console.log('📋 Sample row structure:', Object.keys(rawData[0]));
-    console.log('📋 First row data:', rawData[0]);
   } else {
     console.warn('⚠️  No data rows found in Excel file');
     return;
@@ -352,36 +346,57 @@ function processRTTransactions(rawData) {
                            'REC5401', 'IBCONT01', 'IBCONT02', 'IBPS1', 'IBPS2', 'IBVC', 'BPFLIP'];
   
   showLoadingProgress('Filtering transactions...', 70);
-  console.log(`🔍 Starting to filter ${rawData.length} transactions...`);
-  
+
+
   // Filter for 211 and 212 transactions with additional validation
   const filteredTransactions = rawData.filter(row => {
+    const employeeId = row["Employee ID"] || row["G"] || "";
     const transactionType = row["Transaction Type"] || row["A"] || "";  // Column A
     const fromLocation = (row["From Location"] || row["L"] || "").toString().toUpperCase();
     const toLocation = (row["To Location"] || row["P"] || "").toString().toUpperCase();
-    
+
     // Must be 211 or 212 transaction
-    const validTransactionType = transactionType === 211 || transactionType === 212 || 
+    const validTransactionType = transactionType === 211 || transactionType === 212 ||
                                 transactionType === "211" || transactionType === "212";
-    
+
     // Must not contain CART, MOVEXX, or OBPB in either location (OBPB = non-RT operations)
-    const validLocations = !fromLocation.includes('CART') && 
-                          !fromLocation.includes('MOVEXX') && 
+    const validLocations = !fromLocation.includes('CART') &&
+                          !fromLocation.includes('MOVEXX') &&
                           !fromLocation.includes('OBPB') &&
-                          !toLocation.includes('CART') && 
+                          !toLocation.includes('CART') &&
                           !toLocation.includes('MOVEXX') &&
                           !toLocation.includes('OBPB');
-    
+
+    // Debug removed for cleanup
+
     // Additional validation for 211 transactions - must start from valid pickup zones
     if (transactionType === 211 || transactionType === "211") {
       const isValidPickupZone = validPickupZones.some(zone => fromLocation.includes(zone));
-      return validTransactionType && validLocations && isValidPickupZone;
+      const passed = validTransactionType && validLocations && isValidPickupZone;
+
+      if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] 211 validation:`, {
+          isValidPickupZone,
+          passed
+        });
+      }
+
+      return passed;
     }
 
     // 212 transactions must come from RPUT locations (filter out troubleshooting/one-off transactions)
     if (transactionType === 212 || transactionType === "212") {
       const isFromRPUT = fromLocation.startsWith('RPUT');
-      return validTransactionType && validLocations && isFromRPUT;
+      const passed = validTransactionType && validLocations && isFromRPUT;
+
+      if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] 212 validation:`, {
+          isFromRPUT,
+          passed
+        });
+      }
+
+      return passed;
     }
 
     return validTransactionType && validLocations;
@@ -400,8 +415,6 @@ function processRTTransactions(rawData) {
 
   const filteredOut212s = total212s - rput212s;
 
-  console.log(`✅ Filtered to ${filteredTransactions.length} valid transactions (from ${rawData.length} total)`);
-  console.log(`🔍 212 Transaction filtering: ${rput212s} RPUT transactions kept, ${filteredOut212s} non-RPUT transactions filtered out`);
   
   if (filteredTransactions.length === 0) {
     console.error('❌ No valid transactions found after filtering!');
@@ -440,41 +453,6 @@ function processRTTransactions(rawData) {
         rtTransactionData = processedTransactions;
         localStorage.setItem(RT_STORAGE_KEY, JSON.stringify(rtTransactionData));
 
-        // ✅ CONFIRMATION: All transactions should now be RPUT-based
-        console.log('✅ CONFIRMING RPUT-ONLY FILTERING RESULTS:');
-
-        let rputCount = 0;
-        let nonRputCount = 0;
-        const rputSample = [];
-
-        rtTransactionData.forEach(transaction => {
-          const fromLocation = (transaction.putaway.fromLocation || "").toString().toUpperCase();
-
-          if (fromLocation.startsWith('RPUT')) {
-            rputCount++;
-            if (rputSample.length < 5) {
-              rputSample.push({
-                fromLocation: fromLocation,
-                toLocation: transaction.putaway.toLocation,
-                employeeId: transaction.putaway.employeeId,
-                timeToExecute: transaction.putaway.timeToExecute
-              });
-            }
-          } else {
-            nonRputCount++;
-            console.warn(`⚠️  Unexpected non-RPUT transaction found: ${fromLocation} → ${transaction.putaway.toLocation}`);
-          }
-        });
-
-        console.log(`📊 FINAL TRANSACTION SUMMARY:`);
-        console.log(`✅ All transactions are RPUT-based: ${rputCount} transactions`);
-        if (nonRputCount > 0) {
-          console.error(`❌ ERROR: ${nonRputCount} non-RPUT transactions found despite filtering!`);
-        }
-
-        console.log('\n✅ RPUT TRANSACTION SAMPLE:');
-        console.table(rputSample);
-        
         // Set transaction data flag
         hasTransactionData = true;
         
@@ -527,10 +505,23 @@ function matchTransactionPairs(filteredTransactions) {
   // Group 212 transactions by LP and find the latest one for each LP
   const lpGroups = {};
 
+  // Debug: Check if DROBINSO48 is in filtered transactions
+  if (DEBUG_TARGET_TM) {
+    const targetTransactions = [...transaction211s, ...transaction212s].filter(t => {
+      const employeeId = t["Employee ID"] || t["G"] || "";
+      return employeeId === DEBUG_TARGET_TM;
+    });
+    console.log(`🔍 [${DEBUG_TARGET_TM}] After filtering: ${targetTransactions.length} transactions (${transaction211s.filter(t => (t["Employee ID"] || t["G"]) === DEBUG_TARGET_TM).length} 211s, ${transaction212s.filter(t => (t["Employee ID"] || t["G"]) === DEBUG_TARGET_TM).length} 212s)`);
+  }
+
   transaction212s.forEach(t212 => {
+    const employeeId = t212["Employee ID"] || t212["G"] || "";
     const fromLP = t212["From LP"] || t212["M"] || "";  // Column M
 
     if (!fromLP) {
+      if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] 212 transaction missing From LP - will be unmatched`);
+      }
       unmatchedTransactions.push({
         ...t212,
         matchStatus: 'No From LP',
@@ -563,8 +554,9 @@ function matchTransactionPairs(filteredTransactions) {
     }
   });
 
-  console.log(`📊 LP Transaction Summary:`);
-  console.log(`📦 Total unique LPs: ${Object.keys(lpGroups).length}`);
+  if (DEBUG_TARGET_TM) {
+    console.log(`📊 LP Transaction Summary: ${Object.keys(lpGroups).length} unique LPs`);
+  }
 
   let totalOriginalTransactions = 0;
   let duplicateTransactionsFiltered = 0;
@@ -576,7 +568,9 @@ function matchTransactionPairs(filteredTransactions) {
 
     if (lpGroup.transactions.length > 1) {
       duplicateTransactionsFiltered += (lpGroup.transactions.length - 1);
-      console.log(`🔄 LP ${fromLP}: Using latest of ${lpGroup.transactions.length} transactions`);
+      if (DEBUG_TARGET_TM && t212["Employee ID"] === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] LP ${fromLP}: Using latest of ${lpGroup.transactions.length} transactions`);
+      }
     }
 
     // Find matching 211 transaction
@@ -584,6 +578,16 @@ function matchTransactionPairs(filteredTransactions) {
       const t211_fromLP = t211["From LP"] || t211["M"] || "";
       return t211_fromLP === fromLP;
     });
+
+    // Debug LP matching for target TM
+    if (DEBUG_TARGET_TM && t212["Employee ID"] === DEBUG_TARGET_TM || (matching211 && matching211["Employee ID"] === DEBUG_TARGET_TM)) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] LP matching for ${fromLP}:`, {
+        found211: !!matching211,
+        employee212: t212["Employee ID"] || t212["G"],
+        employee211: matching211 ? (matching211["Employee ID"] || matching211["G"]) : 'No match',
+        lpCount: lpGroup.transactions.length
+      });
+    }
 
     if (matching211) {
       // Create paired transaction
@@ -627,11 +631,13 @@ function matchTransactionPairs(filteredTransactions) {
     }
   });
 
-  console.log(`🔢 Transaction Filtering Results:`);
-  console.log(`   Original 212 transactions: ${totalOriginalTransactions}`);
-  console.log(`   Duplicate transactions filtered: ${duplicateTransactionsFiltered}`);
-  console.log(`   Final unique transactions: ${pairedTransactions.length}`);
-  console.log(`   Filtering reduced count by: ${((duplicateTransactionsFiltered / totalOriginalTransactions) * 100).toFixed(1)}%`);
+  if (DEBUG_TARGET_TM) {
+    console.log(`🔢 Transaction Filtering Results: ${pairedTransactions.length} final paired transactions`);
+    const targetPaired = pairedTransactions.filter(t =>
+      (t.pickup.employeeId === DEBUG_TARGET_TM) || (t.putaway.employeeId === DEBUG_TARGET_TM)
+    );
+    console.log(`🔍 [${DEBUG_TARGET_TM}] Final paired transactions: ${targetPaired.length}`);
+  }
 
   return pairedTransactions;
 }
@@ -643,10 +649,18 @@ function groupByEmployeeAndCalculateMetrics(transactions) {
   transactions.forEach(transaction => {
     // Use putaway employee ID as primary (212 transaction)
     const employeeId = transaction.putaway.employeeId;
-    
+
     if (!employeeId || employeeId.trim() === '') return;
-    
+
+    // Debug TM creation for target TM
+    if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ Creating/adding to processedTMData`);
+    }
+
     if (!processedTMData[employeeId]) {
+      if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] 🆕 NEW TM entry created in processedTMData`);
+      }
       processedTMData[employeeId] = {
         employeeId: employeeId,
         totalPutaways: 0,
@@ -873,8 +887,15 @@ function displayOverallMetrics() {
     totalEstimatedTravelTime += parseFloat(tmData.performanceMetrics.avgEstimatedTravelTime);
   });
   
-  // Calculate TPH as total transactions / total hours (matches CLMS calculation)
-  const avgPutawayRate = totalCLMSHours > 0 ? (totalCLMSTransactions / totalCLMSHours).toFixed(2) : '0.00';
+  // Use direct TPH from CLMS totals line if available, otherwise calculate from aggregated data
+  let avgPutawayRate = '0.00';
+  if (laborHoursData && laborHoursData.__totals && laborHoursData.__totals.tph) {
+    // Use the TPH directly from CLMS totals line (e.g., 5.65)
+    avgPutawayRate = laborHoursData.__totals.tph.toFixed(2);
+  } else if (totalCLMSHours > 0) {
+    // Fallback to calculated TPH from individual TM aggregation
+    avgPutawayRate = (totalCLMSTransactions / totalCLMSHours).toFixed(2);
+  }
   const avgTravelAisles = totalTMs > 0 ? (totalTravelAisles / totalTMs).toFixed(1) : '0.0';
   const avgTravelDepth = totalTMs > 0 ? (totalTravelDepth / totalTMs).toFixed(1) : '0.0';
   const avgRackHeight = totalTMs > 0 ? (totalRackHeight / totalTMs).toFixed(1) : '0.0';
@@ -921,6 +942,7 @@ function displayOverallMetrics() {
   
   // Update display
   updateElement('totalTransactions', `Total RT Transactions: ${totalTransactions}`);
+  updateElement('totalHours', `Total Hours (CLMS): ${totalCLMSHours.toFixed(2)}`);
   updateElement('totalTMs', `Active Team Members: ${totalTMs}`);
   updateElement('avgTransactionsPerTM', `Avg Transactions per TM: ${totalTMs > 0 ? (totalTransactions / totalTMs).toFixed(1) : '0.0'}`);
   updateElement('avgTransactionTime', `Avg Transaction Time: ${avgTransactionTime} minutes`);
@@ -1454,9 +1476,9 @@ function clearRTData() {
   
   // Clear all displays
   const elementsToReset = [
-    'totalTransactions', 'totalTMs', 'avgTransactionsPerTM', 'avgTransactionTime', 'avgPutawayRate',
+    'totalTransactions', 'totalHours', 'totalTMs', 'avgTransactionsPerTM', 'avgTransactionTime', 'avgPutawayRate',
     'avgTravelDistance', 'avgTravelDepth', 'avgRackHeight', 'avgEstimatedTravelTime', 'longTransactionCount',
-    'longTransactionPercent', 'avgLongTransactionTime', 'pureRTLongTransactionCount', 
+    'longTransactionPercent', 'avgLongTransactionTime', 'pureRTLongTransactionCount',
     'pureRTLongTransactionPercent', 'lowestTPHTM', 'mostLongTxTM'
   ];
   
@@ -4192,8 +4214,29 @@ function parseLaborHoursData(pastedText) {
       // Skip until we find employee data
       if (!employeeDataStarted) continue;
       
-      // Stop at totals line
-      if (line.toLowerCase().startsWith('totals')) break;
+      // Capture and stop at totals line
+      if (line.toLowerCase().startsWith('totals')) {
+        // Parse totals line: Totals    [supervisor]    [hours]    [units]    [uph]    [transactions]    [tph]
+        const totalsParts = line.split('\t');
+        if (totalsParts.length >= 7) {
+          const totalHours = parseFloat(totalsParts[2].trim());
+          const totalUnits = parseInt(totalsParts[3].trim());
+          const totalUph = parseFloat(totalsParts[4].trim());
+          const totalTransactions = parseInt(totalsParts[5].trim());
+          const totalTph = parseFloat(totalsParts[6].trim());
+
+          if (!isNaN(totalTph)) {
+            laborData.__totals = {
+              totalHours: totalHours,
+              totalUnits: totalUnits,
+              uph: totalUph,
+              totalTransactions: totalTransactions,
+              tph: totalTph
+            };
+          }
+        }
+        break;
+      }
       
       // Skip non-data lines
       if (line.includes('Showing') || line.includes('Report an Issue')) break;
@@ -4239,6 +4282,86 @@ function parseLaborHoursData(pastedText) {
 }
 
 // Update TM data with actual labor hours
+// Calculate name matching score for process of elimination
+function calculateNameMatchScore(tmId, fullName) {
+  console.log(`🔍 SCORING: "${tmId}" vs "${fullName}"`);
+
+  const tmIdLower = tmId.toLowerCase();
+  const tmIdClean = tmIdLower.replace(/\d+$/, ''); // Remove trailing numbers
+
+  const nameParts = fullName.toLowerCase().split(' ');
+  if (nameParts.length < 2) return 0;
+
+  const firstName = nameParts[0];
+  // Handle names with suffixes like "Jr", "Sr", "III", etc.
+  // Use second-to-last part as last name if last part looks like a suffix
+  const lastPart = nameParts[nameParts.length - 1].toLowerCase();
+  const isSuffix = ['jr', 'jr.', 'sr', 'sr.', 'ii', 'iii', 'iv', 'v'].includes(lastPart);
+  const lastName = isSuffix && nameParts.length > 2 ?
+                   nameParts[nameParts.length - 2] :
+                   nameParts[nameParts.length - 1];
+
+  let score = 0;
+
+  // Exact name match (highest score)
+  if (tmIdLower === fullName.toLowerCase().replace(/\s+/g, '')) score += 100;
+
+  // First letter + last name variations
+  if (tmIdLower.includes(firstName.charAt(0) + lastName)) score += 80;
+  if (tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 7))) score += 75;
+  if (tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 6))) score += 70;
+  if (tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 5))) score += 65;
+
+  // Special case for patterns like "drobinso" matching "dennis robinson"
+  if (tmIdClean.length >= 6 &&
+      tmIdClean.charAt(0) === firstName.charAt(0) &&
+      tmIdClean.substring(1).includes(lastName.substring(0, Math.min(6, lastName.length)))) {
+    score += 90; // High score for this specific pattern
+  }
+
+  // Full name components
+  if (tmIdLower.includes(firstName)) score += 50;
+  if (tmIdLower.includes(lastName)) score += 60;
+
+  // Initials + partial matches
+  if (tmIdLower.includes(firstName + lastName.charAt(0))) score += 40;
+  if (firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1))) score += 30;
+
+  // Debug for specific case
+  if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+    console.log(`🔍 [${DEBUG_TARGET_TM}] SCORE CALCULATION for "${fullName}":`);
+    console.log(`   tmIdLower: "${tmIdLower}"`);
+    console.log(`   tmIdClean: "${tmIdClean}"`);
+    console.log(`   firstName: "${firstName}", lastName: "${lastName}"`);
+
+    // Test each condition individually
+    const cond1 = tmIdLower === fullName.toLowerCase().replace(/\s+/g, '');
+    const cond2 = tmIdLower.includes(firstName.charAt(0) + lastName);
+    const cond3 = tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 7));
+    const cond4 = tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 6));
+    const cond5 = tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 5));
+    const cond6 = tmIdClean.length >= 6 && tmIdClean.charAt(0) === firstName.charAt(0) && tmIdClean.substring(1).includes(lastName.substring(0, Math.min(6, lastName.length)));
+    const cond7 = tmIdLower.includes(firstName);
+    const cond8 = tmIdLower.includes(lastName);
+    const cond9 = tmIdLower.includes(firstName + lastName.charAt(0));
+    const cond10 = firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1));
+
+    console.log(`   Condition 1 (exact): ${cond1} +${cond1 ? 100 : 0}`);
+    console.log(`   Condition 2 (first+last): ${cond2} +${cond2 ? 80 : 0}`);
+    console.log(`   Condition 3 (first+last7): ${cond3} +${cond3 ? 75 : 0}`);
+    console.log(`   Condition 4 (first+last6): ${cond4} +${cond4 ? 70 : 0}`);
+    console.log(`   Condition 5 (first+last5): ${cond5} +${cond5 ? 65 : 0}`);
+    console.log(`   Condition 6 (special): ${cond6} +${cond6 ? 90 : 0}`);
+    console.log(`   Condition 7 (firstname): ${cond7} +${cond7 ? 50 : 0}`);
+    console.log(`   Condition 8 (lastname): ${cond8} +${cond8 ? 60 : 0}`);
+    console.log(`   Condition 9 (init+last): ${cond9} +${cond9 ? 40 : 0}`);
+    console.log(`   Condition 10 (mixed): ${cond10} +${cond10 ? 30 : 0}`);
+    console.log(`   Final score: ${score}`);
+  }
+
+  return score;
+}
+
 function integrateLaborHours() {
   if (!laborHoursData || Object.keys(laborHoursData).length === 0) {
     return;
@@ -4246,36 +4369,101 @@ function integrateLaborHours() {
   
   let integratedCount = 0;
   let missingLaborData = [];
-  
+  let usedCLMSNames = new Set(); // Track which CLMS names have been matched
+
   // Update existing processed TM data with actual labor hours
+  if (DEBUG_TARGET_TM) {
+    const hasTargetTM = Object.keys(processedTMData).includes(DEBUG_TARGET_TM);
+    console.log(`🔍 [${DEBUG_TARGET_TM}] CLMS Integration starting - Target TM in processedTMData: ${hasTargetTM}`);
+    if (hasTargetTM) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] processedTMData entry exists:`, {
+        totalPutaways: processedTMData[DEBUG_TARGET_TM].totalPutaways,
+        totalTime: processedTMData[DEBUG_TARGET_TM].totalTime
+      });
+    }
+    console.log(`🔍 [${DEBUG_TARGET_TM}] Total CLMS records available: ${Object.keys(laborHoursData).length}`);
+  }
+
   Object.keys(processedTMData).forEach(tmId => {
     const tmData = processedTMData[tmId];
-    
+
+    // Debug name matching for target TM
+    if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] 🔄 Starting name matching process:`);
+      console.log(`   Transaction ID: "${tmId}"`);
+      console.log(`   Available CLMS names:`, Object.keys(laborHoursData));
+    }
+
     // Try to find matching labor data by exact name match first
     let laborRecord = laborHoursData[tmId];
-    
+
+    if (laborRecord) {
+      usedCLMSNames.add(tmId); // Track exact matches too
+    }
+
+    if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] Exact match result:`, !!laborRecord);
+    }
+
     // If no exact match, try advanced matching strategies
     if (!laborRecord) {
       // Strategy 1: Match by first and last name initials + partial name
       const tmIdLower = tmId.toLowerCase();
+      const tmIdClean = tmIdLower.replace(/\d+$/, ''); // Remove trailing numbers for matching
+
       const possibleMatches = Object.keys(laborHoursData).filter(fullName => {
         const nameParts = fullName.toLowerCase().split(' ');
         if (nameParts.length >= 2) {
           const firstName = nameParts[0];
           const lastName = nameParts[nameParts.length - 1];
-          
-          // Check if tmId contains first letter + last name or first name + first letter of last
+
+          // Enhanced matching strategies
           return (
+            // Original strategies
             tmIdLower.includes(firstName.charAt(0) + lastName) ||
             tmIdLower.includes(firstName + lastName.charAt(0)) ||
             (firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1))) ||
             tmIdLower.includes(firstName) ||
-            tmIdLower.includes(lastName)
+            tmIdLower.includes(lastName) ||
+
+            // New strategies for cases like DROBINSO48 -> Dennis Robinson
+            // First letter + truncated last name
+            tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 7)) ||
+            tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 6)) ||
+            tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 5)) ||
+
+            // Check if clean tmId starts with first letter and contains most of last name
+            (tmIdClean.startsWith(firstName.charAt(0)) &&
+             lastName.length >= 5 &&
+             tmIdClean.includes(lastName.substring(0, Math.min(7, lastName.length)))) ||
+
+            // Special case: check if tmIdClean matches pattern like "drobinso" for "dennis robinson"
+            (tmIdClean.length >= 6 &&
+             tmIdClean.charAt(0) === firstName.charAt(0) &&
+             tmIdClean.substring(1).includes(lastName.substring(0, Math.min(6, lastName.length))))
           );
         }
         return false;
       });
-      
+
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] Strategy 1 results:`, possibleMatches);
+        console.log(`   Clean tmId: "${tmIdClean}"`);
+
+        // Debug specific matching for Dennis Robinson Jr
+        const dennisRobinson = laborHoursData["Dennis Robinson Jr"];
+        if (dennisRobinson) {
+          const dennisFirstName = "dennis";
+          const dennisLastName = "robinson";
+          console.log(`🔍 [${DEBUG_TARGET_TM}] Testing against "Dennis Robinson Jr":`);
+          console.log(`   firstName: "${dennisFirstName}", lastName: "${dennisLastName}"`);
+          console.log(`   Test tmIdClean.charAt(0) === firstName.charAt(0): "${tmIdClean.charAt(0)}" === "${dennisFirstName.charAt(0)}" = ${tmIdClean.charAt(0) === dennisFirstName.charAt(0)}`);
+          console.log(`   Test tmIdClean.substring(1): "${tmIdClean.substring(1)}"`);
+          console.log(`   Test lastName.substring(0, 6): "${dennisLastName.substring(0, 6)}"`);
+          console.log(`   Test tmIdClean.substring(1).includes(lastName.substring(0, 6)): "${tmIdClean.substring(1)}".includes("${dennisLastName.substring(0, 6)}") = ${tmIdClean.substring(1).includes(dennisLastName.substring(0, 6))}`);
+        }
+      }
+
       // Strategy 2: If Strategy 1 doesn't work, try reverse matching
       if (possibleMatches.length === 0) {
         Object.keys(laborHoursData).forEach(fullName => {
@@ -4285,31 +4473,52 @@ function integrateLaborHours() {
             const firstName = nameParts[0];
             const lastName = nameParts[nameParts.length - 1];
             const middleName = nameParts.length > 2 ? nameParts[1] : '';
-            
+
             const variations = [
               firstName.charAt(0) + lastName,
               firstName + lastName.charAt(0),
               firstName.charAt(0) + middleName.charAt(0) + lastName,
               firstName.charAt(0) + lastName + '2',
-              firstName.substring(0,3) + lastName.substring(0,3)
+              firstName.substring(0,3) + lastName.substring(0,3),
+              // New variations for truncated last names
+              firstName.charAt(0) + lastName.substring(0, 7),
+              firstName.charAt(0) + lastName.substring(0, 6),
+              firstName.charAt(0) + lastName.substring(0, 5)
             ].filter(v => v);
-            
-            if (variations.some(v => tmIdLower.includes(v) || v.includes(tmIdLower))) {
+
+            if (variations.some(v => tmIdClean.includes(v) || v.includes(tmIdClean))) {
               possibleMatches.push(fullName);
             }
           }
         });
       }
+
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] Strategy 2 results:`, possibleMatches);
+      }
       
       if (possibleMatches.length === 1) {
         laborRecord = laborHoursData[possibleMatches[0]];
+        usedCLMSNames.add(possibleMatches[0]); // Track this CLMS name as used
+        if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+          console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MATCHED to: "${possibleMatches[0]}"`);
+        }
       } else if (possibleMatches.length > 1) {
         // Take the first match for now, but log for manual review
         laborRecord = laborHoursData[possibleMatches[0]];
+        usedCLMSNames.add(possibleMatches[0]); // Track this CLMS name as used
+        if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+          console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MULTIPLE MATCHES, using first: "${possibleMatches[0]}"`);
+          console.log(`   All matches:`, possibleMatches);
+        }
       }
     }
-    
+
     if (laborRecord) {
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ FINAL RESULT: Labor record found, integrating data`);
+        console.log(`   Hours: ${laborRecord.totalHours}, TPH: ${laborRecord.tph}`);
+      }
       // Update the TM data with actual labor hours
       const originalPutawayRate = tmData.performanceMetrics.avgPutawayRate;
       const actualHours = laborRecord.totalHours;
@@ -4329,11 +4538,141 @@ function integrateLaborHours() {
       integratedCount++;
       const originalRate = parseFloat(originalPutawayRate) || 0;
     } else {
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] ❌ NO LABOR RECORD FOUND - adding to missingLaborData`);
+      }
       missingLaborData.push(tmId);
     }
   });
-  
+
+  // Process of Elimination: Match remaining unmatched TMs to remaining unused CLMS names
   if (missingLaborData.length > 0) {
+    const unusedCLMSNames = Object.keys(laborHoursData).filter(name => !usedCLMSNames.has(name));
+
+    console.log(`🔍 Process of Elimination: ${missingLaborData.length} unmatched TMs, ${unusedCLMSNames.length} unused CLMS names`);
+    console.log(`   Unmatched TMs:`, missingLaborData);
+    console.log(`   Unused CLMS names:`, unusedCLMSNames);
+    console.log(`   Used CLMS names (${usedCLMSNames.size}):`, Array.from(usedCLMSNames));
+    console.log(`   Total CLMS records: ${Object.keys(laborHoursData).length}`);
+
+    if (DEBUG_TARGET_TM && missingLaborData.includes(DEBUG_TARGET_TM)) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] Entering process of elimination matching`);
+    }
+
+    // Enhanced matching using logical name matching for remaining items
+    const pairsToMatch = Math.min(missingLaborData.length, unusedCLMSNames.length);
+    console.log(`🔍 Process of Elimination: Will attempt ${pairsToMatch} logical pairings`);
+
+    // Try to find best logical matches rather than simple 1:1 pairing
+    const successfulMatches = [];
+    const remainingUnmatched = [...missingLaborData];
+    const remainingUnused = [...unusedCLMSNames];
+
+    // For each unmatched TM, find the best logical match from unused CLMS names
+    for (const unmatchedTmId of missingLaborData) {
+      console.log(`🔍 Process of Elimination: Finding best match for "${unmatchedTmId}"`);
+
+      let bestMatch = null;
+      let bestScore = 0;
+
+      for (const unusedCLMSName of remainingUnused) {
+        const score = calculateNameMatchScore(unmatchedTmId, unusedCLMSName);
+        console.log(`   Testing "${unusedCLMSName}": score ${score}`);
+
+        // Debug specific case
+        if (DEBUG_TARGET_TM && unmatchedTmId === DEBUG_TARGET_TM && unusedCLMSName === "Dennis Robinson Jr") {
+          console.log(`🔍 [${DEBUG_TARGET_TM}] DEBUG SCORING for "${unusedCLMSName}":`);
+          console.log(`   tmId: "${unmatchedTmId}"`);
+          console.log(`   tmIdLower: "${unmatchedTmId.toLowerCase()}"`);
+          console.log(`   tmIdClean: "${unmatchedTmId.toLowerCase().replace(/\d+$/, '')}"`);
+          console.log(`   firstName: "dennis", lastName: "robinson"`);
+
+          // Test the specific condition that should match
+          const tmIdClean = unmatchedTmId.toLowerCase().replace(/\d+$/, '');
+          const firstName = "dennis";
+          const lastName = "robinson";
+          const condition1 = tmIdClean.length >= 6;
+          const condition2 = tmIdClean.charAt(0) === firstName.charAt(0);
+          const condition3 = tmIdClean.substring(1).includes(lastName.substring(0, Math.min(6, lastName.length)));
+
+          console.log(`   Condition 1 (tmIdClean.length >= 6): ${condition1}`);
+          console.log(`   Condition 2 (tmIdClean.charAt(0) === firstName.charAt(0)): ${condition2}`);
+          console.log(`   Condition 3 (tmIdClean.substring(1).includes(lastName.substring(0, 6))): ${condition3}`);
+          console.log(`   All conditions: ${condition1 && condition2 && condition3}`);
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = unusedCLMSName;
+        }
+      }
+
+      if (bestMatch && bestScore > 0) {
+        console.log(`🎯 Best match for "${unmatchedTmId}": "${bestMatch}" (score: ${bestScore})`);
+        successfulMatches.push({ tmId: unmatchedTmId, clmsName: bestMatch });
+
+        // Remove from remaining lists
+        const tmIndex = remainingUnmatched.indexOf(unmatchedTmId);
+        const clmsIndex = remainingUnused.indexOf(bestMatch);
+        if (tmIndex > -1) remainingUnmatched.splice(tmIndex, 1);
+        if (clmsIndex > -1) remainingUnused.splice(clmsIndex, 1);
+      } else {
+        console.log(`❌ No logical match found for "${unmatchedTmId}"`);
+      }
+    }
+
+    // Apply the successful matches
+    for (const match of successfulMatches) {
+      const { tmId: unmatchedTmId, clmsName: unusedCLMSName } = match;
+
+      console.log(`🔍 Process of Elimination Applying: "${unmatchedTmId}" → "${unusedCLMSName}"`);
+
+      if (DEBUG_TARGET_TM && unmatchedTmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] 🎯 Process of Elimination: Attempting to match "${unmatchedTmId}" to "${unusedCLMSName}"`);
+      }
+
+      // Apply the match
+      const tmData = processedTMData[unmatchedTmId];
+      const laborRecord = laborHoursData[unusedCLMSName];
+
+      if (tmData && laborRecord) {
+        // Update the TM data with actual labor hours
+        const actualHours = laborRecord.totalHours;
+        const actualRate = actualHours > 0 ? tmData.totalPutaways / actualHours : 0;
+
+        tmData.actualLaborHours = actualHours;
+        tmData.actualPutawayRate = actualRate;
+        tmData.laborSystemUPH = laborRecord.uph;
+        tmData.laborSystemTPH = laborRecord.tph;
+        tmData.laborSystemTransactions = laborRecord.totalTransactions;
+        tmData.supervisor = laborRecord.supervisor;
+
+        // Update performance metrics with actual data
+        tmData.performanceMetrics.actualPutawayRate = actualRate;
+        tmData.performanceMetrics.laborHoursUsed = actualHours;
+
+        integratedCount++;
+        usedCLMSNames.add(unusedCLMSName);
+
+        // Remove from missing list
+        const missingIndex = missingLaborData.indexOf(unmatchedTmId);
+        if (missingIndex > -1) {
+          missingLaborData.splice(missingIndex, 1);
+        }
+
+        console.log(`🎯 Process of Elimination SUCCESS: "${unmatchedTmId}" matched to "${unusedCLMSName}"`);
+
+        if (DEBUG_TARGET_TM && unmatchedTmId === DEBUG_TARGET_TM) {
+          console.log(`🔍 [${DEBUG_TARGET_TM}] 🎉 PROCESS OF ELIMINATION SUCCESS!`);
+          console.log(`   Matched to: "${unusedCLMSName}"`);
+          console.log(`   Hours: ${actualHours}, TPH: ${laborRecord.tph}`);
+        }
+      }
+    }
+  }
+
+  if (missingLaborData.length > 0) {
+    console.log(`⚠️ Still missing labor data after process of elimination:`, missingLaborData);
   }
   
   // Set CLMS data flag
@@ -4411,22 +4750,25 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Process labor data directly from clipboard
   async function processLaborDataFromClipboard() {
+    // CLMS import started
     try {
       // Check if we have clipboard API support
       if (!navigator.clipboard || !navigator.clipboard.readText) {
+        // Clipboard API not supported
         throw new Error('Clipboard access not supported. Please use a modern browser (Chrome, Firefox, Safari, Edge).');
       }
       
       // Request clipboard permission and read data
+      // Reading clipboard data
       const clipboardData = await navigator.clipboard.readText();
-      
+
       if (!clipboardData.trim()) {
         throw new Error('Clipboard is empty. Please copy the labor data from CLMS first.');
       }
-      
+
       // Parse the clipboard data
       laborHoursData = parseLaborHoursData(clipboardData);
-      
+
       if (Object.keys(laborHoursData).length === 0) {
         throw new Error('No valid employee data found in clipboard. Please ensure you copied the complete CLMS report.');
       }
@@ -4565,18 +4907,37 @@ function generateUnifiedTMList() {
     const tmData = processedTMData[tmId];
     const hasLaborData = tmData.actualLaborHours !== undefined;
     
+    // Debug CLMS integration for target TM
+    if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+      console.log(`🔍 [${DEBUG_TARGET_TM}] CLMS integration check:`, {
+        hasLaborData: hasLaborData,
+        actualLaborHours: tmData.actualLaborHours,
+        laborSystemTPH: tmData.laborSystemTPH,
+        totalPutaways: tmData.totalPutaways
+      });
+    }
+
     // Skip TMs without CLMS data - they may be doing problem solve or other non-putaway work
     if (!hasLaborData) {
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] EXCLUDED: No CLMS labor data`);
+      }
       return; // Skip this TM
     }
-    
+
     // Skip TMs with 0 labor hours - they didn't work putaway during this period
     if (tmData.actualLaborHours === 0) {
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] EXCLUDED: 0 labor hours`);
+      }
       return; // Skip this TM
     }
-    
+
     // Skip TMs with less than 2 hours - not enough time for fair evaluation
     if (tmData.actualLaborHours < 2) {
+      if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] EXCLUDED: Less than 2 hours (${tmData.actualLaborHours})`);
+      }
       return; // Skip this TM
     }
     
@@ -4617,28 +4978,55 @@ function generateUnifiedTMList() {
   });
   
   // Now determine STU flags based on new criteria
-  // 1. Get top 2 TMs for long transactions (from eligible TMs only)
-  const eligibleLongTxTMs = eligibleTMs
+  // ✅ EXCLUDE LC FLAGGED TMs from STU consideration (they're still learning)
+  const veteranEligibleTMs = eligibleTMs.filter(tm => !isTeamMemberFlaggedAsLC(tm.tmId));
+
+  // STU Flagging process completed
+
+  // 1. Get top 2 TMs for long transactions (from veteran TMs only)
+  const eligibleLongTxTMs = veteranEligibleTMs
     .filter(tm => tm.longTxCount > 0)
     .sort((a, b) => b.longTxCount - a.longTxCount)
     .slice(0, 2)
     .map(tm => tm.tmId);
-  
-  // 2. Get bottom 3 TMs for TPH (from eligible TMs only)
-  const eligibleLowTPHTMs = eligibleTMs
+
+  // 2. Get bottom 3 TMs for TPH (from veteran TMs only)
+  const eligibleLowTPHTMs = veteranEligibleTMs
     .sort((a, b) => a.rtRate - b.rtRate)
     .slice(0, 3)
     .map(tm => tm.tmId);
-  
+
   // 3. Combine lists and remove duplicates to create STU list
   const stuFlaggedTMs = new Set([...eligibleLongTxTMs, ...eligibleLowTPHTMs]);
+
+  // STU flags determined
   
-  
-  // Now create cards for all eligible TMs
+
+  // Separate STU and non-STU TMs, then sort non-STU by TPH (lowest to highest)
+  const stuTMs = [];
+  const otherTMs = [];
+
   eligibleTMs.forEach(tm => {
+    const hasSTUFlag = stuFlaggedTMs.has(tm.tmId);
+    if (hasSTUFlag) {
+      stuTMs.push(tm);
+    } else {
+      otherTMs.push(tm);
+    }
+  });
+
+  // Sort other TMs by TPH (lowest to highest) regardless of LC flags
+  otherTMs.sort((a, b) => a.rtRate - b.rtRate);
+
+  // TM sorting completed
+
+  // Process all TMs (STU first, then sorted others)
+  const allTMsToProcess = [...stuTMs, ...otherTMs];
+
+  allTMsToProcess.forEach(tm => {
     const { tmId, tmData, hasLaborData, rtRate, laborHours, longTxCount, longTxDetails, upt } = tm;
     
-    // Determine if this TM is flagged for STU
+    // Determine if this TM is flagged for STU (already determined in sorting above)
     const hasSTUFlag = stuFlaggedTMs.has(tmId);
     
     // Build STU reason for flagged TMs
@@ -4690,10 +5078,27 @@ function generateUnifiedTMList() {
       showTMTransactionDetails(tmId, tmData, longTxDetails);
     });
     
+    // Check if TM is flagged as LC
+    const isLCFlagged = isTeamMemberFlaggedAsLC(tmId);
+    const lcFlagClass = isLCFlagged ? 'lc-flagged' : '';
+
     card.innerHTML = `
       <div class="tm-card-name-section">
-        <div class="tm-card-name">${tmId}</div>
-        <div class="tm-card-rate ${rateClass}">${rtRate.toFixed(1)} TPH</div>
+        <div class="tm-card-left-column">
+          <div class="tm-card-name">${tmId}</div>
+          <div class="tm-card-rate ${rateClass} ${lcFlagClass}">${rtRate.toFixed(1)} TPH ${isLCFlagged ? '(LC)' : ''}</div>
+
+          <!-- LC Flag Button under TPH -->
+          <button class="lc-flag-btn-left ${isLCFlagged ? 'lc-active' : ''}"
+                  onclick="event.stopPropagation(); toggleLCFlag('${tmId}')"
+                  title="${isLCFlagged ? 'Remove Learning Curve flag from this TM' : 'Flag this TM as Learning Curve (still developing skills)'}">
+            <span class="lc-icon">🎓</span>
+            <span class="lc-text">${isLCFlagged ? 'Unflag LC' : 'Flag for LC'}</span>
+          </button>
+        </div>
+        <div class="tm-card-right-column">
+          <!-- This space can be used for additional info if needed -->
+        </div>
       </div>
       
       <div class="tm-card-section">
@@ -4934,3 +5339,144 @@ function updateUnifiedTMList() {
   calculateDepartmentAverages();
   generateUnifiedTMList();
 }
+
+// ==== LC (Learning Curve) Flag Functionality ====
+
+// Reset LC flags on each page load (no persistence)
+function resetLCFlags() {
+  lcFlaggedTMs = new Set();
+  // LC flags reset
+
+  // Clear any existing LC metric display
+  const existingMetric = document.getElementById('lcExcludedMetric');
+  if (existingMetric) {
+    existingMetric.remove();
+  }
+
+  // Clean up any old localStorage LC data from previous versions
+  if (localStorage.getItem('rtRates_lcFlags')) {
+    localStorage.removeItem('rtRates_lcFlags');
+    console.log(`🧹 Cleaned up old LC flags from localStorage`);
+  }
+}
+
+// Check if a TM is flagged as LC
+function isTeamMemberFlaggedAsLC(tmId) {
+  return lcFlaggedTMs.has(tmId);
+}
+
+// Toggle LC flag for a TM
+function toggleLCFlag(tmId) {
+  const wasLCFlagged = lcFlaggedTMs.has(tmId);
+
+  if (wasLCFlagged) {
+    lcFlaggedTMs.delete(tmId);
+  } else {
+    lcFlaggedTMs.add(tmId);
+  }
+
+  // No longer saving to localStorage - flags reset each session
+
+  // Update displays
+  updateLCMetricsDisplay();
+
+  // Regenerate TM cards to update visual state and recalculate STU flags
+  updateUnifiedTMList();
+
+  console.log(`Current LC flagged TMs: [${Array.from(lcFlaggedTMs).join(', ')}]`);
+}
+
+// Calculate metrics excluding LC flagged TMs
+function calculateMetricsExcludingLC() {
+  let totalVeteranTransactions = 0;
+  let totalVeteranHours = 0;
+
+  Object.entries(processedTMData).forEach(([tmId, tmData]) => {
+    if (!isTeamMemberFlaggedAsLC(tmId)) {
+      // Use CLMS transactions if available, otherwise use Excel transaction count
+      const transactions = tmData.laborSystemTransactions || tmData.totalPutaways;
+      totalVeteranTransactions += transactions;
+
+      // Use CLMS labor hours if available, otherwise use transaction time
+      const laborHours = tmData.actualLaborHours || 0;
+      if (laborHours > 0) {
+        totalVeteranHours += laborHours;
+      } else {
+        // Fallback to transaction time in hours
+        totalVeteranHours += tmData.totalTime / 3600;
+      }
+    }
+  });
+
+  const veteranTPH = totalVeteranHours > 0 ? (totalVeteranTransactions / totalVeteranHours) : 0;
+
+  return {
+    totalTransactions: totalVeteranTransactions,
+    totalHours: totalVeteranHours,
+    tph: veteranTPH,
+    lcCount: lcFlaggedTMs.size
+  };
+}
+
+// Update LC metrics display in the summary
+function updateLCMetricsDisplay() {
+  if (lcFlaggedTMs.size === 0) {
+    // No LC TMs flagged - hide the metric
+    const existingMetric = document.getElementById('lcExcludedMetric');
+    if (existingMetric) {
+      existingMetric.remove();
+    }
+    return;
+  }
+
+  const metrics = calculateMetricsExcludingLC();
+
+  // Find or create the LC metric element
+  let lcMetricElement = document.getElementById('lcExcludedMetric');
+
+  if (!lcMetricElement) {
+    // Find the Performance Summary section and add the metric there
+    const performanceSummaryCategories = document.querySelectorAll('.metrics-category');
+    let performanceSummarySection = null;
+
+    performanceSummaryCategories.forEach(category => {
+      const h3 = category.querySelector('h3');
+      if (h3 && h3.textContent.includes('Performance Summary')) {
+        performanceSummarySection = category;
+      }
+    });
+
+    if (performanceSummarySection) {
+      lcMetricElement = document.createElement('p');
+      lcMetricElement.id = 'lcExcludedMetric';
+      lcMetricElement.style.cssText = `
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+        border-left: 4px solid #ffc107;
+        color: #856404;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin: 8px 0;
+        font-weight: 600;
+      `;
+      performanceSummarySection.appendChild(lcMetricElement);
+    }
+  }
+
+  if (lcMetricElement) {
+    lcMetricElement.innerHTML = `
+      🎓 RT Rate (LC TMs Excluded): <strong>${metrics.tph.toFixed(2)} TPH</strong><br>
+      <small style="color: #6c757d;">${metrics.totalTransactions.toLocaleString()} transactions ÷ ${metrics.totalHours.toFixed(1)} hours (${metrics.lcCount} LC TM${metrics.lcCount !== 1 ? 's' : ''} excluded)</small>
+    `;
+  }
+}
+
+// Initialize LC functionality when page loads
+function initializeLCFunctionality() {
+  resetLCFlags();
+  // LC functionality initialized
+}
+
+// Call initialization when transaction data is processed
+window.addEventListener('DOMContentLoaded', function() {
+  initializeLCFunctionality();
+});

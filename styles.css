@@ -1884,3 +1884,124 @@ footer {
   font-size: 0.9rem;
   border-top: 1px solid #e9ecef;
 }
+
+/* ==== LC (Learning Curve) Flag Styling ==== */
+
+/* TM Card Name Section Layout */
+.tm-card-name-section {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.tm-card-left-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tm-card-right-column {
+  flex: 0;
+  /* Reserved for future use */
+}
+
+/* Left-side LC Flag Button */
+.lc-flag-btn-left {
+  background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  align-self: flex-start;
+}
+
+.lc-flag-btn-left:hover {
+  background: linear-gradient(135deg, #495057 0%, #343a40 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* LC Flag Button - Active State (when flagged) */
+.lc-flag-btn-left.lc-active {
+  background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+  color: #212529;
+  font-weight: bold;
+}
+
+.lc-flag-btn-left.lc-active:hover {
+  background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(255, 193, 7, 0.4);
+}
+
+/* LC Button Icon and Text */
+.lc-icon {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.lc-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* LC Flagged TM Card Visual Indicators */
+.tm-card-rate.lc-flagged {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  color: #856404;
+  border: 1px solid #ffeaa7;
+  font-style: italic;
+}
+
+/* LC Excluded Metric Card */
+.summary-metric-card.lc-excluded {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border-left: 4px solid #ffc107;
+  color: #856404;
+}
+
+.summary-metric-card.lc-excluded .summary-metric-title {
+  color: #856404;
+  font-weight: 600;
+}
+
+.summary-metric-card.lc-excluded .summary-metric-value {
+  color: #495057;
+  font-weight: bold;
+}
+
+.summary-metric-card.lc-excluded .summary-metric-details {
+  color: #6c757d;
+}
+
+/* Responsive adjustments for LC button */
+@media (max-width: 768px) {
+  .lc-flag-btn-left {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.7rem;
+    gap: 0.3rem;
+  }
+
+  .lc-icon {
+    font-size: 0.75rem;
+  }
+
+  .lc-text {
+    font-size: 0.7rem;
+  }
+
+  .tm-card-name-section {
+    flex-direction: column;
+  }
+}
