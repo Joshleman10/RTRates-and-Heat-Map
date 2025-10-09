@@ -1981,21 +1981,28 @@ function populateHeatmapTMSelector() {
 function setupHeatmapEventListeners() {
   const tmSelector = document.getElementById('heatmapTMSelector');
   const typeSelector = document.getElementById('heatmapTransactionType');
-  
-  if (!tmSelector || !typeSelector) return;
-  
+  const rtRateSelector = document.getElementById('heatmapRTRateFilter');
+
+  if (!tmSelector || !typeSelector || !rtRateSelector) return;
+
   // Remove existing listeners to avoid duplicates
   const newTmSelector = tmSelector.cloneNode(true);
   const newTypeSelector = typeSelector.cloneNode(true);
+  const newRtRateSelector = rtRateSelector.cloneNode(true);
   tmSelector.parentNode.replaceChild(newTmSelector, tmSelector);
   typeSelector.parentNode.replaceChild(newTypeSelector, typeSelector);
-  
+  rtRateSelector.parentNode.replaceChild(newRtRateSelector, rtRateSelector);
+
   // Add event listeners
   newTmSelector.addEventListener('change', () => {
     drawHeatmap();
   });
-  
+
   newTypeSelector.addEventListener('change', () => {
+    drawHeatmap();
+  });
+
+  newRtRateSelector.addEventListener('change', () => {
     drawHeatmap();
   });
 }
@@ -2688,19 +2695,64 @@ function isValidAisleLocation(aisle, locationString = '') {
 function generateHeatmapData() {
   const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
   const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
-  
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+
   let transactionsToAnalyze = [];
-  
-  if (selectedTM === 'all') {
-    transactionsToAnalyze = rtTransactionData || [];
+
+  // First apply RT rate filter if selected
+  if (rtRateFilter !== 'all') {
+    // Get list of employee IDs that match the rate filter
+    const eligibleEmployees = new Set();
+
+    Object.keys(processedTMData).forEach(tmId => {
+      const tmData = processedTMData[tmId];
+      const hasLaborData = tmData.actualLaborHours !== undefined;
+      const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+      const rate = parseFloat(rtRate) || 0;
+
+      let includeEmployee = false;
+
+      switch(rtRateFilter) {
+        case 'below_4':
+          includeEmployee = rate < 4.0;
+          break;
+        case 'below_5':
+          includeEmployee = rate < 5.0;
+          break;
+        case 'below_6':
+          includeEmployee = rate < 6.0;
+          break;
+        case 'above_6':
+          includeEmployee = rate > 6.0;
+          break;
+        case 'above_7':
+          includeEmployee = rate > 7.0;
+          break;
+      }
+
+      if (includeEmployee) {
+        eligibleEmployees.add(tmId);
+      }
+    });
+
+    // Filter transactions to only include eligible employees
+    transactionsToAnalyze = (rtTransactionData || []).filter(t =>
+      eligibleEmployees.has(t.putaway.employeeId)
+    );
   } else {
-    transactionsToAnalyze = (rtTransactionData || []).filter(t => 
+    transactionsToAnalyze = rtTransactionData || [];
+  }
+
+  // Then apply TM selector filter
+  if (selectedTM !== 'all') {
+    transactionsToAnalyze = transactionsToAnalyze.filter(t =>
       t.putaway.employeeId === selectedTM
     );
   }
-  
+
+  // Apply transaction type filter
   if (transactionType === 'long') {
-    transactionsToAnalyze = transactionsToAnalyze.filter(t => 
+    transactionsToAnalyze = transactionsToAnalyze.filter(t =>
       t.putaway.timeToExecute > 600 // >10 minutes
     );
   }
@@ -3090,6 +3142,7 @@ function clearAllFilters() {
   // Reset UI elements
   document.getElementById('heatmapTMSelector').value = 'all';
   document.getElementById('heatmapTransactionType').value = 'all';
+  document.getElementById('heatmapRTRateFilter').value = 'all';
   document.getElementById('rectangleSelectionStats').style.display = 'none';
   document.getElementById('clearSelectionBtn').style.display = 'none';
   
@@ -3250,27 +3303,39 @@ function updateRectangleSelectionAfterFilter() {
 function updateRectangleFilterInfo() {
   const filterInfoDiv = document.getElementById('rectangleFilterInfo');
   if (!filterInfoDiv) return;
-  
+
   const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
   const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
-  
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+
   let filterParts = [];
-  
+
   // Check for active filters
   if (selectedTM !== 'all') {
     const tmOption = document.querySelector(`#heatmapTMSelector option[value="${selectedTM}"]`);
     const tmText = tmOption ? tmOption.textContent.split(' - ')[0] : selectedTM;
     filterParts.push(`TM: ${tmText}`);
   }
-  
+
   if (transactionType !== 'all') {
     filterParts.push(`Type: ${transactionType === 'long' ? 'Long Transactions' : transactionType}`);
   }
-  
+
+  if (rtRateFilter !== 'all') {
+    const rateFilterText = {
+      'below_4': 'RT Rate < 4.0 PPH',
+      'below_5': 'RT Rate < 5.0 PPH',
+      'below_6': 'RT Rate < 6.0 PPH',
+      'above_6': 'RT Rate > 6.0 PPH',
+      'above_7': 'RT Rate > 7.0 PPH'
+    };
+    filterParts.push(rateFilterText[rtRateFilter] || rtRateFilter);
+  }
+
   if (selectedPickupZone) {
     filterParts.push(`Zone: ${selectedPickupZone}`);
   }
-  
+
   if (filterParts.length > 0) {
     filterInfoDiv.innerHTML = `🔍 Filtered by: ${filterParts.join(', ')}`;
     filterInfoDiv.style.display = 'block';
@@ -3620,28 +3685,71 @@ function getTotalPickupTransactions() {
 }
 
 function calculatePickupZoneTotals() {
-  // Calculate pickup zone totals from complete dataset, respecting employee and transaction type filters only
+  // Calculate pickup zone totals from complete dataset, respecting employee, transaction type, and RT rate filters only
   const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
   const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
-  
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+
   let transactionsForPickupCounts = [];
-  
-  // Apply employee filter only
-  if (selectedTM === 'all') {
-    transactionsForPickupCounts = rtTransactionData || [];
+
+  // First apply RT rate filter if selected
+  if (rtRateFilter !== 'all') {
+    // Get list of employee IDs that match the rate filter
+    const eligibleEmployees = new Set();
+
+    Object.keys(processedTMData).forEach(tmId => {
+      const tmData = processedTMData[tmId];
+      const hasLaborData = tmData.actualLaborHours !== undefined;
+      const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+      const rate = parseFloat(rtRate) || 0;
+
+      let includeEmployee = false;
+
+      switch(rtRateFilter) {
+        case 'below_4':
+          includeEmployee = rate < 4.0;
+          break;
+        case 'below_5':
+          includeEmployee = rate < 5.0;
+          break;
+        case 'below_6':
+          includeEmployee = rate < 6.0;
+          break;
+        case 'above_6':
+          includeEmployee = rate > 6.0;
+          break;
+        case 'above_7':
+          includeEmployee = rate > 7.0;
+          break;
+      }
+
+      if (includeEmployee) {
+        eligibleEmployees.add(tmId);
+      }
+    });
+
+    // Filter transactions to only include eligible employees
+    transactionsForPickupCounts = (rtTransactionData || []).filter(t =>
+      eligibleEmployees.has(t.putaway.employeeId)
+    );
   } else {
-    transactionsForPickupCounts = (rtTransactionData || []).filter(t => 
+    transactionsForPickupCounts = rtTransactionData || [];
+  }
+
+  // Apply employee filter
+  if (selectedTM !== 'all') {
+    transactionsForPickupCounts = transactionsForPickupCounts.filter(t =>
       t.putaway.employeeId === selectedTM
     );
   }
-  
-  // Apply transaction type filter only
+
+  // Apply transaction type filter
   if (transactionType === 'long') {
-    transactionsForPickupCounts = transactionsForPickupCounts.filter(t => 
+    transactionsForPickupCounts = transactionsForPickupCounts.filter(t =>
       t.putaway.timeToExecute > 600 // >10 minutes
     );
   }
-  
+
   // DO NOT apply pickup zone filter - we want totals for ALL pickup zones
   
   // Reset pickup zone counts
@@ -4282,12 +4390,37 @@ function parseLaborHoursData(pastedText) {
 }
 
 // Update TM data with actual labor hours
+// Helper function to find longest consecutive matching substring
+function findLongestConsecutiveMatch(str1, str2) {
+  let maxLength = 0;
+  let maxSubstring = '';
+
+  // Try to find consecutive matches of str1 in str2
+  for (let i = 0; i < str1.length; i++) {
+    for (let j = 0; j < str2.length; j++) {
+      let k = 0;
+      while (i + k < str1.length &&
+             j + k < str2.length &&
+             str1[i + k] === str2[j + k]) {
+        k++;
+      }
+      if (k > maxLength) {
+        maxLength = k;
+        maxSubstring = str1.substring(i, i + k);
+      }
+    }
+  }
+
+  return { length: maxLength, substring: maxSubstring };
+}
+
 // Calculate name matching score for process of elimination
 function calculateNameMatchScore(tmId, fullName) {
   console.log(`🔍 SCORING: "${tmId}" vs "${fullName}"`);
 
   const tmIdLower = tmId.toLowerCase();
   const tmIdClean = tmIdLower.replace(/\d+$/, ''); // Remove trailing numbers
+  const nameNoSpaces = fullName.toLowerCase().replace(/\s+/g, '').replace(/[.,]/g, '');
 
   const nameParts = fullName.toLowerCase().split(' ');
   if (nameParts.length < 2) return 0;
@@ -4327,11 +4460,24 @@ function calculateNameMatchScore(tmId, fullName) {
   if (tmIdLower.includes(firstName + lastName.charAt(0))) score += 40;
   if (firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1))) score += 30;
 
+  // ENHANCED: Consecutive letter matching (fallback strategy)
+  const consecutiveMatch = findLongestConsecutiveMatch(tmIdClean, nameNoSpaces);
+  if (consecutiveMatch.length >= 4) {
+    const matchPercentage = (consecutiveMatch.length / tmIdClean.length) * 100;
+    const consecutiveScore = Math.floor(matchPercentage * 0.85); // Scale to max 85 points
+
+    console.log(`   📊 Consecutive match: "${consecutiveMatch.substring}" (${consecutiveMatch.length} chars, ${matchPercentage.toFixed(1)}% of username)`);
+    console.log(`   📊 Consecutive score: +${consecutiveScore}`);
+
+    score += consecutiveScore;
+  }
+
   // Debug for specific case
   if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
     console.log(`🔍 [${DEBUG_TARGET_TM}] SCORE CALCULATION for "${fullName}":`);
     console.log(`   tmIdLower: "${tmIdLower}"`);
     console.log(`   tmIdClean: "${tmIdClean}"`);
+    console.log(`   nameNoSpaces: "${nameNoSpaces}"`);
     console.log(`   firstName: "${firstName}", lastName: "${lastName}"`);
 
     // Test each condition individually
@@ -4356,6 +4502,7 @@ function calculateNameMatchScore(tmId, fullName) {
     console.log(`   Condition 8 (lastname): ${cond8} +${cond8 ? 60 : 0}`);
     console.log(`   Condition 9 (init+last): ${cond9} +${cond9 ? 40 : 0}`);
     console.log(`   Condition 10 (mixed): ${cond10} +${cond10 ? 30 : 0}`);
+    console.log(`   Consecutive match details:`, consecutiveMatch);
     console.log(`   Final score: ${score}`);
   }
 
@@ -4366,10 +4513,17 @@ function integrateLaborHours() {
   if (!laborHoursData || Object.keys(laborHoursData).length === 0) {
     return;
   }
-  
+
   let integratedCount = 0;
   let missingLaborData = [];
   let usedCLMSNames = new Set(); // Track which CLMS names have been matched
+
+  console.log(`\n🔵 ============ CLMS INTEGRATION STARTING ============`);
+  console.log(`   Total CLMS records: ${Object.keys(laborHoursData).length}`);
+  console.log(`   Total transaction usernames: ${Object.keys(processedTMData).length}`);
+  console.log(`   CLMS names available:`, Object.keys(laborHoursData));
+  console.log(`   Transaction usernames:`, Object.keys(processedTMData));
+  console.log(`🔵 ================================================\n`);
 
   // Update existing processed TM data with actual labor hours
   if (DEBUG_TARGET_TM) {
@@ -4399,6 +4553,12 @@ function integrateLaborHours() {
 
     if (laborRecord) {
       usedCLMSNames.add(tmId); // Track exact matches too
+      console.log(`✅ EXACT MATCH: "${tmId}"`);
+
+      // Special logging for Dennis Robinson Jr
+      if (tmId === "Dennis Robinson Jr") {
+        console.log(`🎯 "Dennis Robinson Jr" claimed by EXACT MATCH: "${tmId}"`);
+      }
     }
 
     if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
@@ -4412,6 +4572,14 @@ function integrateLaborHours() {
       const tmIdClean = tmIdLower.replace(/\d+$/, ''); // Remove trailing numbers for matching
 
       const possibleMatches = Object.keys(laborHoursData).filter(fullName => {
+        // Skip names that have already been matched to another username
+        if (usedCLMSNames.has(fullName)) {
+          if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+            console.log(`🔍 [${DEBUG_TARGET_TM}] Skipping "${fullName}" - already matched to another username`);
+          }
+          return false;
+        }
+
         const nameParts = fullName.toLowerCase().split(' ');
         if (nameParts.length >= 2) {
           const firstName = nameParts[0];
@@ -4467,6 +4635,14 @@ function integrateLaborHours() {
       // Strategy 2: If Strategy 1 doesn't work, try reverse matching
       if (possibleMatches.length === 0) {
         Object.keys(laborHoursData).forEach(fullName => {
+          // Skip names that have already been matched to another username
+          if (usedCLMSNames.has(fullName)) {
+            if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+              console.log(`🔍 [${DEBUG_TARGET_TM}] Strategy 2: Skipping "${fullName}" - already matched to another username`);
+            }
+            return;
+          }
+
           const nameParts = fullName.toLowerCase().split(' ');
           if (nameParts.length >= 2) {
             // Create possible ID variations from full name
@@ -4500,15 +4676,50 @@ function integrateLaborHours() {
       if (possibleMatches.length === 1) {
         laborRecord = laborHoursData[possibleMatches[0]];
         usedCLMSNames.add(possibleMatches[0]); // Track this CLMS name as used
+
+        // Log all matches to help debug who claimed which name
+        console.log(`✅ MATCHED: "${tmId}" → "${possibleMatches[0]}"`);
+
+        // Special logging for Dennis Robinson Jr
+        if (possibleMatches[0] === "Dennis Robinson Jr") {
+          console.log(`🎯 "Dennis Robinson Jr" claimed by: "${tmId}"`);
+        }
+
         if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
           console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MATCHED to: "${possibleMatches[0]}"`);
         }
       } else if (possibleMatches.length > 1) {
-        // Take the first match for now, but log for manual review
-        laborRecord = laborHoursData[possibleMatches[0]];
-        usedCLMSNames.add(possibleMatches[0]); // Track this CLMS name as used
+        // Score all possible matches and pick the best one
+        console.log(`🔍 Multiple matches for "${tmId}" - scoring each:`, possibleMatches);
+
+        let bestMatch = null;
+        let bestScore = 0;
+
+        possibleMatches.forEach(candidateName => {
+          const score = calculateNameMatchScore(tmId, candidateName);
+          console.log(`   "${candidateName}": ${score} points`);
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = candidateName;
+          }
+        });
+
+        console.log(`   🏆 Best match: "${bestMatch}" with ${bestScore} points`);
+
+        laborRecord = laborHoursData[bestMatch];
+        usedCLMSNames.add(bestMatch); // Track this CLMS name as used
+
+        // Log all matches to help debug who claimed which name
+        console.log(`✅ MATCHED (multiple, scored): "${tmId}" → "${bestMatch}" (scored ${bestScore} points from ${possibleMatches.length} options)`);
+
+        // Special logging for Dennis Robinson Jr
+        if (bestMatch === "Dennis Robinson Jr") {
+          console.log(`🎯 "Dennis Robinson Jr" claimed by: "${tmId}" (scored ${bestScore} points from ${possibleMatches.length} possible matches)`);
+        }
+
         if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
-          console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MULTIPLE MATCHES, using first: "${possibleMatches[0]}"`);
+          console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MULTIPLE MATCHES, using best scored: "${bestMatch}" (${bestScore} points)`);
           console.log(`   All matches:`, possibleMatches);
         }
       }
@@ -4557,16 +4768,55 @@ function integrateLaborHours() {
 
     if (DEBUG_TARGET_TM && missingLaborData.includes(DEBUG_TARGET_TM)) {
       console.log(`🔍 [${DEBUG_TARGET_TM}] Entering process of elimination matching`);
+
+      // Check if "Dennis Robinson Jr" was already used
+      if (!unusedCLMSNames.includes("Dennis Robinson Jr")) {
+        console.log(`🔍 [${DEBUG_TARGET_TM}] ⚠️ "Dennis Robinson Jr" was already matched to another username`);
+        console.log(`   It is in the usedCLMSNames set:`, usedCLMSNames.has("Dennis Robinson Jr"));
+      }
     }
 
-    // Enhanced matching using logical name matching for remaining items
-    const pairsToMatch = Math.min(missingLaborData.length, unusedCLMSNames.length);
-    console.log(`🔍 Process of Elimination: Will attempt ${pairsToMatch} logical pairings`);
+    // SPECIAL CASE: If only 1 unmatched TM and 1 unused CLMS name, automatically pair them
+    if (missingLaborData.length === 1 && unusedCLMSNames.length === 1) {
+      console.log(`🎯 AUTOMATIC 1:1 MATCH: Only one pair left - "${missingLaborData[0]}" → "${unusedCLMSNames[0]}"`);
 
-    // Try to find best logical matches rather than simple 1:1 pairing
-    const successfulMatches = [];
-    const remainingUnmatched = [...missingLaborData];
-    const remainingUnused = [...unusedCLMSNames];
+      const unmatchedTmId = missingLaborData[0];
+      const unusedCLMSName = unusedCLMSNames[0];
+      const tmData = processedTMData[unmatchedTmId];
+      const laborRecord = laborHoursData[unusedCLMSName];
+
+      if (tmData && laborRecord) {
+        const actualHours = parseFloat(laborRecord.totalHours) || 0;
+        const actualRate = actualHours > 0 ? (tmData.totalPutaways / actualHours) : 0;
+
+        tmData.actualLaborHours = actualHours;
+        tmData.actualPutawayRate = actualRate;
+        tmData.laborSystemUPH = laborRecord.uph;
+        tmData.laborSystemTPH = laborRecord.tph;
+        tmData.laborSystemTransactions = laborRecord.totalTransactions;
+        tmData.supervisor = laborRecord.supervisor;
+        tmData.performanceMetrics.actualPutawayRate = actualRate;
+        tmData.performanceMetrics.laborHoursUsed = actualHours;
+
+        usedCLMSNames.add(unusedCLMSName);
+        const missingIndex = missingLaborData.indexOf(unmatchedTmId);
+        if (missingIndex > -1) {
+          missingLaborData.splice(missingIndex, 1);
+        }
+
+        console.log(`✅ 1:1 MATCH SUCCESS: "${unmatchedTmId}" → "${unusedCLMSName}"`);
+      }
+
+      // Skip the rest of process of elimination since we handled it
+    } else {
+      // Enhanced matching using logical name matching for remaining items
+      const pairsToMatch = Math.min(missingLaborData.length, unusedCLMSNames.length);
+      console.log(`🔍 Process of Elimination: Will attempt ${pairsToMatch} logical pairings`);
+
+      // Try to find best logical matches rather than simple 1:1 pairing
+      const successfulMatches = [];
+      const remainingUnmatched = [...missingLaborData];
+      const remainingUnused = [...unusedCLMSNames];
 
     // For each unmatched TM, find the best logical match from unused CLMS names
     for (const unmatchedTmId of missingLaborData) {
@@ -4669,6 +4919,7 @@ function integrateLaborHours() {
         }
       }
     }
+    } // Close the else block for multi-pair matching
   }
 
   if (missingLaborData.length > 0) {

@@ -164,6 +164,17 @@
               <option value="long">Long Transactions Only (>10min)</option>
             </select>
           </div>
+          <div class="heatmap-control-group">
+            <label for="heatmapRTRateFilter">RT Rate Filter:</label>
+            <select id="heatmapRTRateFilter" class="heatmap-dropdown">
+              <option value="all">All Users</option>
+              <option value="below_4">Below 4.0 PPH</option>
+              <option value="below_5">Below 5.0 PPH</option>
+              <option value="below_6">Below 6.0 PPH</option>
+              <option value="above_6">Above 6.0 PPH</option>
+              <option value="above_7">Above 7.0 PPH</option>
+            </select>
+          </div>
           <button id="rectangleSelectBtn" class="btn btn-secondary">📐 Rectangle Select</button>
           <button id="clearSelectionBtn" class="btn btn-secondary" style="display: none;">✖ Clear Selection</button>
           <button id="clearAllBtn" class="btn btn-secondary">🔄 Clear All Filters</button>
