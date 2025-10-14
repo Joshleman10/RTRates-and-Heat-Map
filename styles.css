@@ -1,5 +1,12 @@
 /* RT Productivity Analysis Styles */
 
+/* Global Font Family - Modern System Font Stack */
+body, html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* App Header Styling */
 .app-header {
   text-align: center;
@@ -1083,6 +1090,28 @@
   border: 1px solid #e9ecef;
   border-radius: 8px;
   padding: 1.5rem;
+}
+
+/* Warehouse Display Container - Ensure sidebar aligns with map */
+.warehouse-display-container {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start; /* Align to top */
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.warehouse-stats-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-width: 200px;
+  align-self: flex-start; /* Ensure sidebar sticks to top */
+  margin-top: 40px; /* Align with the top of the warehouse grid (below the canvas title) */
+}
+
+.warehouse-map-container {
+  align-self: flex-start; /* Ensure map container also sticks to top */
 }
 
 .heatmap-controls {

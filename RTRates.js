@@ -2253,27 +2253,36 @@ function getPickupZonePosition(zoneName) {
   };
 }
 
+// Helper function to adjust color brightness for gradients
+function adjustColorBrightness(color, amount) {
+  const hex = color.replace('#', '');
+  const r = Math.max(0, Math.min(255, parseInt(hex.substr(0, 2), 16) + amount));
+  const g = Math.max(0, Math.min(255, parseInt(hex.substr(2, 2), 16) + amount));
+  const b = Math.max(0, Math.min(255, parseInt(hex.substr(4, 2), 16) + amount));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 function getTransactionHeightColor(rackLevel) {
-  // Height-based color system for rack levels
+  // Height-based color system for rack levels - Pure primary colors for maximum operational impact
   if (!rackLevel) return '#888888'; // Gray for unknown levels
-  
+
   const level = rackLevel.toUpperCase();
-  
-  // ABC levels = Green (ground/low levels)
+
+  // ABC levels = Green (ground/low levels) - Pure bright green
   if (['A', 'B', 'C'].includes(level)) {
-    return '#00ff00'; // Bright green for dark theme
+    return '#00ff00'; // Bright green - maximum visual weight
   }
-  
-  // D, G, J levels = Yellow (mid levels)  
+
+  // D, G, J levels = Yellow (mid levels) - Pure bright yellow
   if (['D', 'G', 'J'].includes(level)) {
-    return '#ffff00'; // Bright yellow for dark theme
+    return '#ffff00'; // Bright yellow - high visibility warning
   }
-  
-  // M, P, S levels = Red (high levels)
+
+  // M, P, S levels = Red (high levels) - Pure bright red
   if (['M', 'P', 'S'].includes(level)) {
-    return '#ff0000'; // Bright red for dark theme
+    return '#ff0000'; // Bright red - critical operational indicator
   }
-  
+
   // Default for unknown levels
   return '#888888'; // Gray
 }
@@ -2281,16 +2290,16 @@ function getTransactionHeightColor(rackLevel) {
 function getHeatmapColor(transactionCount, rackLevel) {
   // Use height-based coloring instead of intensity-based
   const baseColor = getTransactionHeightColor(rackLevel);
-  
-  // Adjust opacity based on transaction count for visibility
-  const opacity = Math.min(Math.max(transactionCount * 0.15 + 0.4, 0.4), 0.9);
-  
+
+  // Adjust opacity based on transaction count for visibility - more vibrant with higher base opacity
+  const opacity = Math.min(Math.max(transactionCount * 0.15 + 0.6, 0.6), 1.0);
+
   // Convert hex to rgba with opacity
   const hex = baseColor.replace('#', '');
   const r = parseInt(hex.substr(0, 2), 16);
   const g = parseInt(hex.substr(2, 2), 16);
   const b = parseInt(hex.substr(4, 2), 16);
-  
+
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
@@ -2364,13 +2373,13 @@ function drawWarehouseLayout() {
       if (aisleNumber % 5 === 0) {
         // Add aisle number label at top of aisle - white for visibility
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px Arial';
+        ctx.font = '600 11px "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(aisleNumber.toString(), position.x, position.bay05Position.y - aisleLength - 10);
         
         // Add bay range label at bottom (near bay 05) - light gray
         ctx.fillStyle = '#cccccc';
-        ctx.font = '9px Arial';
+        ctx.font = '9px "Segoe UI", sans-serif';
         ctx.fillText(`${config.startBay}-${config.endBay}`, position.x, position.bay05Position.y + 18);
       }
       
@@ -2388,7 +2397,7 @@ function drawWarehouseLayout() {
             // Bay number label (only for multiples of 10 to avoid too much clutter)
             if (bay % 10 === 0) {
               ctx.fillStyle = 'rgba(108, 117, 125, 0.6)';
-              ctx.font = '7px Arial';
+              ctx.font = '7px "Segoe UI", sans-serif';
               ctx.textAlign = 'center';
               ctx.fillText(bay.toString(), bayPosition.x + 8, bayPosition.y + 2);
             }
@@ -2427,7 +2436,7 @@ function drawWarehouseLayout() {
       // S-aisle label (only show for S01 and S06 at top only)
       if (sAisle === 'S01' || sAisle === 'S06') {
         ctx.fillStyle = '#17a2b8';
-        ctx.font = 'bold 11px Arial';
+        ctx.font = '600 11px "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(sAisle, position.x, position.bay05Position.y - aisleLength - 10);
         
@@ -2448,7 +2457,7 @@ function drawWarehouseLayout() {
             // Bay number label (every 10 bays)
             if (bay % 10 === 0) {
               ctx.fillStyle = 'rgba(23, 162, 184, 0.6)';
-              ctx.font = '7px Arial';
+              ctx.font = '7px "Segoe UI", sans-serif';
               ctx.textAlign = 'center';
               ctx.fillText(bay.toString(), bayPosition.x + 8, bayPosition.y + 2);
             }
@@ -2509,7 +2518,7 @@ function drawWarehouseLayout() {
             // Bay number label (every 10 bays)
             if (bay % 10 === 0) {
               ctx.fillStyle = 'rgba(108, 117, 125, 0.6)';
-              ctx.font = '7px Arial';
+              ctx.font = '7px "Segoe UI", sans-serif';
               ctx.textAlign = 'center';
               ctx.fillText(bay.toString(), bayPosition.x + 8, bayPosition.y + 2);
             }
@@ -2532,44 +2541,85 @@ function drawWarehouseLayout() {
       const buttonHalfWidth = buttonWidth / 2;
       const buttonHalfHeight = buttonHeight / 2;
       
-      // Add shadow for button effect
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; // More visible shadow on dark background
-      ctx.fillRect(position.x - buttonHalfWidth + 1, position.y - buttonHalfHeight + 1, buttonWidth, buttonHeight);
-      
-      // Main button
-      ctx.fillStyle = isSelected ? '#ffffff' : position.color;
+      // Add modern shadow effect with multiple layers for depth
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = isSelected ? 12 : 8;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = isSelected ? 4 : 2;
+
+      // Main button with gradient effect for modern look
+      if (isSelected) {
+        // Selected state: vibrant white with colored border
+        ctx.fillStyle = '#ffffff';
+      } else {
+        // Normal state: use a slightly lighter, more vibrant version of the color
+        const gradient = ctx.createLinearGradient(
+          position.x - buttonHalfWidth, position.y - buttonHalfHeight,
+          position.x - buttonHalfWidth, position.y + buttonHalfHeight
+        );
+        gradient.addColorStop(0, position.color);
+        gradient.addColorStop(1, adjustColorBrightness(position.color, -20)); // Slightly darker at bottom
+        ctx.fillStyle = gradient;
+      }
       
       // Fallback for browsers without roundRect support
       if (typeof ctx.roundRect === 'function') {
         ctx.beginPath();
-        ctx.roundRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight, 6);
+        ctx.roundRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight, 8);
         ctx.fill();
       } else {
         // Simple rectangle fallback
         ctx.fillRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight);
       }
-      
-      // Add border for selected state
+
+      // Reset shadow for border and text
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Add modern border for all buttons
       if (isSelected) {
+        // Selected state: thicker, vibrant colored border
         ctx.strokeStyle = position.color;
-        ctx.lineWidth = 3; // Thicker border for visibility
-        if (typeof ctx.roundRect === 'function') {
-          ctx.beginPath();
-          ctx.roundRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight, 6);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight);
-        }
+        ctx.lineWidth = 3;
+      } else {
+        // Normal state: subtle border for definition
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1.5;
+      }
+
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight, 8);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(position.x - buttonHalfWidth, position.y - buttonHalfHeight, buttonWidth, buttonHeight);
       }
       
       // Add text with better sizing and contrast for readability
-      ctx.fillStyle = isSelected ? '#000000' : '#ffffff'; // Black text for selected (white background), white for normal
-      ctx.font = 'bold 9px Arial'; // Increased from 7px to 9px for better readability
+      // Add strong text shadow for maximum visibility
+      if (isSelected) {
+        // Selected state: black text with white shadow
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.fillStyle = '#000000';
+      } else {
+        // Normal state: white text with dark shadow for contrast
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#ffffff';
+      }
+
+      ctx.font = '700 10px "Segoe UI", sans-serif'; // Increased weight to 700 (bold) and size to 10px
       ctx.textAlign = 'center';
-      
+
       // Smart text sizing based on container width (60px total for new button size)
       let displayName = zoneName;
-      
+
       // Handle combined zones - show both zone names
       if (config.zones && config.zones.length > 1) {
         // For IBPS1_IBVC, show as "IBPS1&IBVC" to fit in button
@@ -2587,38 +2637,54 @@ function drawWarehouseLayout() {
       } else if (zoneName.length > 12) {
         displayName = zoneName.substring(0, 10) + '...';
       }
-      
+
       ctx.fillText(displayName, position.x, position.y + 2);
+
+      // Reset shadow for other elements
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
       
       // Add transaction count and percentage below the button - always show, including 0 counts
       const zoneCount = getZoneTransactionCount(zoneName);
       const totalTransactions = getTotalPickupTransactions();
       const percentage = totalTransactions > 0 ? ((zoneCount / totalTransactions) * 100).toFixed(1) : '0.0';
-      
+
+      // Add text shadow for transaction count for better visibility
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 3;
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
+
       ctx.fillStyle = '#ffffff'; // White text for visibility on dark background
-      ctx.font = 'bold 12px Arial'; // Slightly smaller to fit both lines
+      ctx.font = '700 12px "Segoe UI", sans-serif'; // Bold for better visibility
       ctx.textAlign = 'center';
-      
+
       // First line: transaction count
       ctx.fillText(`${zoneCount} txns`, position.x, position.y + buttonHalfHeight + 12);
-      
-      // Second line: percentage
-      ctx.font = '10px Arial'; // Smaller font for percentage
-      ctx.fillStyle = '#cccccc'; // Lighter color for percentage
+
+      // Second line: percentage with shadow
+      ctx.font = '600 10px "Segoe UI", sans-serif'; // Semi-bold for percentage
+      ctx.fillStyle = '#ffffff'; // Keep white instead of gray for better visibility
       ctx.fillText(`(${percentage}%)`, position.x, position.y + buttonHalfHeight + 25);
+
+      // Reset shadow
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
     }
   });
   
-  // Add centered title - white for dark theme
+  // Add centered title - white for dark theme with modern font
   ctx.fillStyle = '#ffffff';
-  ctx.font = '18px Arial';
+  ctx.font = '600 20px "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('Warehouse Transaction Heat Map', canvas.width / 2, 25);
   
   // Add filter indicator if a pickup zone is selected
   if (selectedPickupZone) {
     ctx.fillStyle = '#00bfff'; // Bright blue for dark theme
-    ctx.font = '12px Arial';
+    ctx.font = '12px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`Filtered by: ${selectedPickupZone}`, canvas.width / 2, 45);
     
@@ -2631,7 +2697,7 @@ function drawWarehouseLayout() {
   if (activeColorFilter) {
     const yOffset = selectedPickupZone ? 75 : 45; // Offset if pickup zone filter is also active
     ctx.fillStyle = '#ff6b6b'; // Bright red for visibility
-    ctx.font = '12px Arial';
+    ctx.font = '12px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`Color Filter: ${activeColorFilter.toUpperCase()}`, canvas.width / 2, yOffset);
     
@@ -2641,7 +2707,7 @@ function drawWarehouseLayout() {
   }
   
   // Center label for pickup zones area - white for visibility
-  ctx.font = '12px Arial';
+  ctx.font = '12px "Segoe UI", sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   const pickupAreaY = selectedPickupZone ? pickupZone.y + 15 : pickupZone.y + 15;
@@ -2895,12 +2961,12 @@ function generateHeatmapData() {
 
 function drawHeatmap() {
   if (!warehouseCtx) return;
-  
+
   // Clear canvas completely
   warehouseCtx.clearRect(0, 0, warehouseCanvas.width, warehouseCanvas.height);
   warehouseCtx.fillStyle = '#000000';
   warehouseCtx.fillRect(0, 0, warehouseCanvas.width, warehouseCanvas.height);
-  
+
   drawWarehouseLayout();
   
   // Clear previous single transaction coordinates
@@ -2959,7 +3025,7 @@ function drawHeatmap() {
     // Draw count if significant (use black text for visibility on bright colors)
     if (count > 2) {
       ctx.fillStyle = '#000000'; // Black text for visibility on bright colors
-      ctx.font = 'bold 8px Arial';
+      ctx.font = '600 8px "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(count.toString(), position.x, position.y + 2);
     }
@@ -2976,9 +3042,12 @@ function drawHeatmap() {
   if (warehouseCtx) {
     heatmapImageData = warehouseCtx.getImageData(0, 0, warehouseCanvas.width, warehouseCanvas.height);
   }
-  
+
   updateHeatmapStats();
-  
+
+  // Update pickup zone travel table with filtered data
+  updatePickupZoneMetric(heatmapTransactionData);
+
   // Update rectangle selection stats if there's an active selection
   updateRectangleSelectionAfterFilter();
 }
@@ -3403,14 +3472,17 @@ function updateHeatmapStats() {
   updatePickupZoneMetric();
 }
 
-function updatePickupZoneMetric() {
-  // Calculate pickup zone estimated travel times using raw transaction data
+function updatePickupZoneMetric(transactionsToUse = null) {
+  // Calculate pickup zone estimated travel times using filtered or raw transaction data
   const pickupZoneTravelTimes = {};
   let totalEstimatedTravelTime = 0;
   let totalTransactionsWithEstimates = 0;
 
-  if (rtTransactionData && rtTransactionData.length > 0) {
-    rtTransactionData.forEach(transaction => {
+  // Use provided transactions or fall back to all transaction data
+  const transactionData = transactionsToUse || rtTransactionData;
+
+  if (transactionData && transactionData.length > 0) {
+    transactionData.forEach(transaction => {
       const pickupZone = transaction.pickup?.fromLocation;
       const travelMetrics = calculateTravelMetrics(transaction);
 
