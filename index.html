@@ -200,23 +200,23 @@
         </div>
 
         <!-- Right side container with fixed positioning -->
-        <div style="display: flex; align-items: center; gap: 15px; min-width: 600px; justify-content: flex-end;">
+        <div style="display: flex; align-items: center; gap: 15px; min-width: 900px; justify-content: flex-end;">
           <!-- Rectangle Selection Stats -->
-          <div class="stat-card" id="rectangleSelectionStats" style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 6px; padding: 8px 12px; display: none; width: 400px; flex-shrink: 0; height: 32px; overflow: hidden;">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; font-size: 14px; white-space: nowrap; height: 100%;">
+          <div class="stat-card" id="rectangleSelectionStats" style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 6px; padding: 8px 12px; display: none; width: 360px; flex-shrink: 0; height: 32px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; white-space: nowrap; height: 100%;">
               <span style="color: #0c5460; font-weight: bold;">📐 Selected:</span>
-              <span style="color: #0c5460;"><span id="selectedAreaTransactions" style="font-weight: bold;">0</span> transactions</span>
+              <span style="color: #0c5460;"><span id="selectedAreaTransactions" style="font-weight: bold;">0</span> txns</span>
               <span style="color: #0c5460;">(<span id="selectedAreaPercentage" style="font-weight: bold;">0%</span>)</span>
-              <span style="color: #0c5460;"><span id="selectedAreaLocations" style="font-weight: bold;">0</span> locations</span>
-              <span id="rectangleFilterInfo" style="color: #0c5460; font-style: italic; font-size: 12px; margin-left: 10px;">
+              <span style="color: #0c5460;"><span id="selectedAreaLocations" style="font-weight: bold;">0</span> locs</span>
+              <span id="rectangleFilterInfo" style="color: #0c5460; font-style: italic; font-size: 11px; margin-left: 5px;">
                 <!-- Filter information will be populated here -->
               </span>
             </div>
           </div>
 
-          <!-- Hover details with fixed width -->
+          <!-- Hover details with fixed width and no wrap -->
           <div class="hover-details" id="hoverDetails"
-            style="color: #212529; font-weight: bold; font-size: 14px; width: 280px; text-align: right; flex-shrink: 0;">
+            style="color: #212529; font-weight: bold; font-size: 14px; width: 400px; text-align: right; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
             Hover over single transactions to see location
           </div>
         </div>
