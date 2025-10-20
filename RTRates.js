@@ -3558,9 +3558,24 @@ function updatePickupZoneMetric(transactionsToUse = null) {
     filteredAvgLabel.textContent = 'Filtered Avg Travel (All):';
 
     const filteredAvgValue = document.createElement('span');
-    filteredAvgValue.style.cssText = 'color: #495057; font-weight: 500;';
+    filteredAvgValue.style.cssText = 'color: #495057; font-weight: 700;';
     const filteredAvgTime = totalTransactionsWithEstimates > 0 ? (totalEstimatedTravelTime / totalTransactionsWithEstimates) : 0;
-    filteredAvgValue.textContent = `${filteredAvgTime.toFixed(1)}m`;
+
+    // Calculate percentage difference from stable average (same logic as individual zones)
+    const filteredComparisonPercent = stableAvgTime > 0 ?
+      (((filteredAvgTime - stableAvgTime) / stableAvgTime) * 100) : 0;
+
+    const filteredComparisonText = Math.abs(filteredComparisonPercent) >= 1 ?
+      (filteredComparisonPercent > 0 ? ` +${filteredComparisonPercent.toFixed(0)}%` : ` ${filteredComparisonPercent.toFixed(0)}%`) : '';
+
+    filteredAvgValue.textContent = `${filteredAvgTime.toFixed(1)}m${filteredComparisonText}`;
+
+    // Color code based on performance (same thresholds as individual zones)
+    if (filteredComparisonPercent > 10) {
+      filteredAvgValue.style.color = '#dc3545'; // Red for slower than average
+    } else if (filteredComparisonPercent < -10) {
+      filteredAvgValue.style.color = '#28a745'; // Green for faster than average
+    }
 
     filteredAvgRow.appendChild(filteredAvgLabel);
     filteredAvgRow.appendChild(filteredAvgValue);
