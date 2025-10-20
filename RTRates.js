@@ -3530,6 +3530,42 @@ function updatePickupZoneMetric(transactionsToUse = null) {
   if (pickupZoneListElement) {
     pickupZoneListElement.innerHTML = '';
 
+    // Add Average Raw Travel Time for ENTIRE GROUP (stable - doesn't change with filters)
+    const stableAvgRow = document.createElement('div');
+    stableAvgRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; margin-bottom: 4px;';
+
+    const stableAvgLabel = document.createElement('span');
+    stableAvgLabel.style.cssText = 'color: #212529; font-weight: 700;';
+    stableAvgLabel.textContent = 'Avg Raw Travel (All):';
+
+    const stableAvgValue = document.createElement('span');
+    stableAvgValue.style.cssText = 'color: #212529; font-weight: 700;';
+
+    // Calculate stable average from ALL transaction data (unfiltered)
+    const stableAvgTime = calculateStableAvgTravel();
+    stableAvgValue.textContent = `${stableAvgTime.toFixed(1)}m`;
+
+    stableAvgRow.appendChild(stableAvgLabel);
+    stableAvgRow.appendChild(stableAvgValue);
+    pickupZoneListElement.appendChild(stableAvgRow);
+
+    // Add Filtered/Adjusted Average Raw Travel Time
+    const filteredAvgRow = document.createElement('div');
+    filteredAvgRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; margin-bottom: 8px;';
+
+    const filteredAvgLabel = document.createElement('span');
+    filteredAvgLabel.style.cssText = 'color: #495057; font-weight: 500;';
+    filteredAvgLabel.textContent = 'Filtered Avg Travel (All):';
+
+    const filteredAvgValue = document.createElement('span');
+    filteredAvgValue.style.cssText = 'color: #495057; font-weight: 500;';
+    const filteredAvgTime = totalTransactionsWithEstimates > 0 ? (totalEstimatedTravelTime / totalTransactionsWithEstimates) : 0;
+    filteredAvgValue.textContent = `${filteredAvgTime.toFixed(1)}m`;
+
+    filteredAvgRow.appendChild(filteredAvgLabel);
+    filteredAvgRow.appendChild(filteredAvgValue);
+    pickupZoneListElement.appendChild(filteredAvgRow);
+
     orderedZones.forEach(zoneInfo => {
       // Calculate travel data for this zone (handling combo zones)
       let zoneData = { totalTime: 0, count: 0 };
@@ -3578,6 +3614,33 @@ function updatePickupZoneMetric(transactionsToUse = null) {
       pickupZoneListElement.appendChild(zoneRow);
     });
   }
+}
+
+// Calculate stable average travel time from ALL unfiltered transaction data
+function calculateStableAvgTravel() {
+  let totalTravelTime = 0;
+  let transactionCount = 0;
+
+  if (rtTransactionData && rtTransactionData.length > 0) {
+    rtTransactionData.forEach(transaction => {
+      const travelMetrics = calculateTravelMetrics(transaction);
+
+      // Calculate estimated travel time from travel metrics components
+      if (travelMetrics && travelMetrics.aislesTraversed >= 0 && travelMetrics.bayDepth >= 0 && travelMetrics.rackLevel >= 0) {
+        const travelTimeResult = calculateEstimatedTravelTime(
+          travelMetrics.aislesTraversed,
+          travelMetrics.bayDepth,
+          travelMetrics.rackLevel
+        );
+        if (travelTimeResult && travelTimeResult.totalEstimatedMinutes > 0) {
+          totalTravelTime += travelTimeResult.totalEstimatedMinutes;
+          transactionCount++;
+        }
+      }
+    });
+  }
+
+  return transactionCount > 0 ? (totalTravelTime / transactionCount) : 0;
 }
 
 function handleHeatmapMouseMove(event) {
