@@ -148,6 +148,18 @@
         <h3 class="section-title-main">Warehouse Transaction Heat Map</h3>
         <p class="section-description">Visual representation of transaction patterns across warehouse locations</p>
       </div>
+
+      <div class="heatmap-filter-summary" id="heatmapFilterSummary" style="display: none; background: #e7f3ff; border: 2px solid #0066cc; border-radius: 8px; padding: 8px 16px; margin: 0 0 10px 0; text-align: center;">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 30px; flex-wrap: wrap;">
+          <div style="font-weight: bold; color: #0066cc; font-size: 14px;">
+            <span id="filterSummaryText">Active Filters: None</span>
+          </div>
+          <div style="font-weight: bold; color: #0066cc; font-size: 14px; border-left: 2px solid #0066cc; padding-left: 30px;">
+            <span id="avgPPHDisplay">Avg PPH: -</span>
+          </div>
+        </div>
+      </div>
+
       <div class="heatmap-controls" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
         <!-- Left side controls -->
         <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
@@ -173,6 +185,15 @@
               <option value="below_6">Below 6.0 PPH</option>
               <option value="above_6">Above 6.0 PPH</option>
               <option value="above_7">Above 7.0 PPH</option>
+            </select>
+          </div>
+          <div class="heatmap-control-group">
+            <label for="heatmapPeriodFilter">Time Period:</label>
+            <select id="heatmapPeriodFilter" class="heatmap-dropdown">
+              <option value="all">All Day</option>
+              <option value="p1">P1 (05:00-08:30)</option>
+              <option value="p2">P2 (09:00-12:00)</option>
+              <option value="p3">P3 (12:00-15:30)</option>
             </select>
           </div>
           <button id="rectangleSelectBtn" class="btn btn-secondary">📐 Rectangle Select</button>

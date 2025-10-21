@@ -1472,8 +1472,8 @@ body, html {
   position: relative;
   display: flex;
   align-items: stretch;
-  min-height: 100px;
-  max-height: 110px;
+  min-height: 130px;
+  max-height: 140px;
 }
 
 .tm-card:hover {

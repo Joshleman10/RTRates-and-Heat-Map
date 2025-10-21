@@ -1946,34 +1946,287 @@ function initializeWarehouseHeatMap() {
   
 }
 
-function populateHeatmapTMSelector() {
+// Refresh the TM dropdown without resetting event listeners
+function refreshHeatmapTMDropdown() {
   const selector = document.getElementById('heatmapTMSelector');
   if (!selector || !processedTMData) return;
-  
+
+  // Get current filter values
+  const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+  const periodFilter = document.getElementById('heatmapPeriodFilter')?.value || 'all';
+
+  // Save current selection
+  const currentSelection = selector.value;
+
   // Clear existing options (except "All Team Members")
   while (selector.children.length > 1) {
     selector.removeChild(selector.lastChild);
   }
-  
-  // Add individual TM options
+
+  // Calculate which TMs have transactions matching current filters
+  const eligibleTMs = new Set();
+
+  // Start with all TMs
+  let candidateTMs = Object.keys(processedTMData);
+
+  // For each TM, check if they have any transactions matching all filters
+  candidateTMs.forEach(tmId => {
+    const tmData = processedTMData[tmId];
+
+    // Get TM's transactions
+    let tmTransactions = (rtTransactionData || []).filter(t =>
+      t.putaway.employeeId === tmId
+    );
+
+    // Apply period filter
+    if (periodFilter !== 'all') {
+      tmTransactions = tmTransactions.filter(t => {
+        const timeRange = getTransactionTimeRange(t, periodFilter);
+        return timeRange.include;
+      });
+    }
+
+    // Apply transaction type filter
+    if (transactionType === 'long') {
+      tmTransactions = tmTransactions.filter(t =>
+        t.putaway.timeToExecute > 600 // >10 minutes
+      );
+    }
+
+    // Apply RT rate filter
+    if (rtRateFilter !== 'all') {
+      // Calculate rate for this TM based on period if applicable
+      let rate = 0;
+
+      if (tmTransactions.length > 0 && periodFilter !== 'all') {
+        // Calculate period-specific rate
+        let periodHours = 0;
+
+        if (tmData.actualLaborHours !== undefined) {
+          // For pasted data, calculate hours from first to last transaction
+          const allTimes = [];
+          tmTransactions.forEach(t => {
+            if (t.pickup?.startTime) allTimes.push(t.pickup.startTime);
+            if (t.putaway?.startTime) allTimes.push(t.putaway.startTime);
+          });
+
+          if (allTimes.length > 0) {
+            allTimes.sort();
+            const firstTime = allTimes[0];
+            const lastTime = allTimes[allTimes.length - 1];
+
+            const firstMinutes = parseTimeToMinutes(firstTime);
+            const lastMinutes = parseTimeToMinutes(lastTime);
+            const periodEnd = getPeriodEndMinutes(periodFilter);
+            const periodStart = getPeriodStartMinutes(periodFilter);
+            const cappedLastMinutes = Math.min(lastMinutes, periodEnd);
+            const cappedFirstMinutes = Math.max(firstMinutes, periodStart);
+            periodHours = (cappedLastMinutes - cappedFirstMinutes) / 60;
+          }
+        } else {
+          // For Excel data, use actual time from transactions
+          periodHours = tmTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+        }
+
+        periodHours = Math.max(periodHours, 0.1);
+        rate = tmTransactions.length / periodHours;
+      } else {
+        // Use original rate
+        const hasLaborData = tmData.actualLaborHours !== undefined;
+        const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+        rate = parseFloat(rtRate) || 0;
+      }
+
+      // Check if rate matches filter
+      let includeEmployee = false;
+      switch(rtRateFilter) {
+        case 'below_4': includeEmployee = rate < 4.0; break;
+        case 'below_5': includeEmployee = rate < 5.0; break;
+        case 'below_6': includeEmployee = rate < 6.0; break;
+        case 'above_6': includeEmployee = rate > 6.0; break;
+        case 'above_7': includeEmployee = rate > 7.0; break;
+      }
+
+      if (!includeEmployee) {
+        tmTransactions = []; // Clear transactions if rate doesn't match
+      }
+    }
+
+    // If TM has any transactions matching filters, add them
+    if (tmTransactions.length > 0) {
+      eligibleTMs.add(tmId);
+    }
+  });
+
+  // Add individual TM options (only eligible TMs)
   Object.keys(processedTMData).forEach(tmId => {
+    // Only show TMs with transactions matching current filters
+    if (!eligibleTMs.has(tmId)) return;
+
     const option = document.createElement('option');
     option.value = tmId;
     const tmData = processedTMData[tmId];
-    
-    // Show actual rate if labor hours are available, otherwise estimated rate  
+
+    // Show actual rate if labor hours are available, otherwise estimated rate
     const hasLaborData = tmData.actualLaborHours !== undefined;
     const rawRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
     const rateToShow = parseFloat(rawRate) || 0; // Ensure it's a number
     const rateLabel = hasLaborData ? 'PPH' : 'PPH (Est)';
-    
+
     option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)`;
     selector.appendChild(option);
   });
-  
+
+  // Restore selection if still valid, otherwise reset to "all"
+  if (currentSelection && Array.from(selector.options).some(opt => opt.value === currentSelection)) {
+    selector.value = currentSelection;
+  } else {
+    selector.value = 'all';
+  }
+}
+
+function populateHeatmapTMSelector() {
+  const selector = document.getElementById('heatmapTMSelector');
+  if (!selector || !processedTMData) return;
+
+  // Get current filter values
+  const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+  const periodFilter = document.getElementById('heatmapPeriodFilter')?.value || 'all';
+
+  // Save current selection
+  const currentSelection = selector.value;
+
+  // Clear existing options (except "All Team Members")
+  while (selector.children.length > 1) {
+    selector.removeChild(selector.lastChild);
+  }
+
+  // Calculate which TMs have transactions matching current filters
+  const eligibleTMs = new Set();
+
+  // Start with all TMs
+  let candidateTMs = Object.keys(processedTMData);
+
+  // For each TM, check if they have any transactions matching all filters
+  candidateTMs.forEach(tmId => {
+    const tmData = processedTMData[tmId];
+
+    // Get TM's transactions
+    let tmTransactions = (rtTransactionData || []).filter(t =>
+      t.putaway.employeeId === tmId
+    );
+
+    // Apply period filter
+    if (periodFilter !== 'all') {
+      tmTransactions = tmTransactions.filter(t => {
+        const timeRange = getTransactionTimeRange(t, periodFilter);
+        return timeRange.include;
+      });
+    }
+
+    // Apply transaction type filter
+    if (transactionType === 'long') {
+      tmTransactions = tmTransactions.filter(t =>
+        t.putaway.timeToExecute > 600 // >10 minutes
+      );
+    }
+
+    // Apply RT rate filter
+    if (rtRateFilter !== 'all') {
+      // Calculate rate for this TM based on period if applicable
+      let rate = 0;
+
+      if (tmTransactions.length > 0 && periodFilter !== 'all') {
+        // Calculate period-specific rate
+        let periodHours = 0;
+
+        if (tmData.actualLaborHours !== undefined) {
+          // For pasted data, calculate hours from first to last transaction
+          const allTimes = [];
+          tmTransactions.forEach(t => {
+            if (t.pickup?.startTime) allTimes.push(t.pickup.startTime);
+            if (t.putaway?.startTime) allTimes.push(t.putaway.startTime);
+          });
+
+          if (allTimes.length > 0) {
+            allTimes.sort();
+            const firstTime = allTimes[0];
+            const lastTime = allTimes[allTimes.length - 1];
+
+            const firstMinutes = parseTimeToMinutes(firstTime);
+            const lastMinutes = parseTimeToMinutes(lastTime);
+            const periodEnd = getPeriodEndMinutes(periodFilter);
+            const periodStart = getPeriodStartMinutes(periodFilter);
+            const cappedLastMinutes = Math.min(lastMinutes, periodEnd);
+            const cappedFirstMinutes = Math.max(firstMinutes, periodStart);
+            periodHours = (cappedLastMinutes - cappedFirstMinutes) / 60;
+          }
+        } else {
+          // For Excel data, use actual time from transactions
+          periodHours = tmTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+        }
+
+        periodHours = Math.max(periodHours, 0.1);
+        rate = tmTransactions.length / periodHours;
+      } else {
+        // Use original rate
+        const hasLaborData = tmData.actualLaborHours !== undefined;
+        const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+        rate = parseFloat(rtRate) || 0;
+      }
+
+      // Check if rate matches filter
+      let includeEmployee = false;
+      switch(rtRateFilter) {
+        case 'below_4': includeEmployee = rate < 4.0; break;
+        case 'below_5': includeEmployee = rate < 5.0; break;
+        case 'below_6': includeEmployee = rate < 6.0; break;
+        case 'above_6': includeEmployee = rate > 6.0; break;
+        case 'above_7': includeEmployee = rate > 7.0; break;
+      }
+
+      if (!includeEmployee) {
+        tmTransactions = []; // Clear transactions if rate doesn't match
+      }
+    }
+
+    // If TM has any transactions matching filters, add them
+    if (tmTransactions.length > 0) {
+      eligibleTMs.add(tmId);
+    }
+  });
+
+  // Add individual TM options (only eligible TMs)
+  Object.keys(processedTMData).forEach(tmId => {
+    // Only show TMs with transactions matching current filters
+    if (!eligibleTMs.has(tmId)) return;
+
+    const option = document.createElement('option');
+    option.value = tmId;
+    const tmData = processedTMData[tmId];
+
+    // Show actual rate if labor hours are available, otherwise estimated rate
+    const hasLaborData = tmData.actualLaborHours !== undefined;
+    const rawRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+    const rateToShow = parseFloat(rawRate) || 0; // Ensure it's a number
+    const rateLabel = hasLaborData ? 'PPH' : 'PPH (Est)';
+
+    option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)`;
+    selector.appendChild(option);
+  });
+
+  // Restore selection if still valid, otherwise reset to "all"
+  if (currentSelection && Array.from(selector.options).some(opt => opt.value === currentSelection)) {
+    selector.value = currentSelection;
+  } else {
+    selector.value = 'all';
+  }
+
   // Set up event listeners for heatmap controls
   setupHeatmapEventListeners();
-  
+
   // Set up rectangle selection event listeners
   setupRectangleSelectionListeners();
 }
@@ -1982,16 +2235,19 @@ function setupHeatmapEventListeners() {
   const tmSelector = document.getElementById('heatmapTMSelector');
   const typeSelector = document.getElementById('heatmapTransactionType');
   const rtRateSelector = document.getElementById('heatmapRTRateFilter');
+  const periodSelector = document.getElementById('heatmapPeriodFilter');
 
-  if (!tmSelector || !typeSelector || !rtRateSelector) return;
+  if (!tmSelector || !typeSelector || !rtRateSelector || !periodSelector) return;
 
   // Remove existing listeners to avoid duplicates
   const newTmSelector = tmSelector.cloneNode(true);
   const newTypeSelector = typeSelector.cloneNode(true);
   const newRtRateSelector = rtRateSelector.cloneNode(true);
+  const newPeriodSelector = periodSelector.cloneNode(true);
   tmSelector.parentNode.replaceChild(newTmSelector, tmSelector);
   typeSelector.parentNode.replaceChild(newTypeSelector, typeSelector);
   rtRateSelector.parentNode.replaceChild(newRtRateSelector, rtRateSelector);
+  periodSelector.parentNode.replaceChild(newPeriodSelector, periodSelector);
 
   // Add event listeners
   newTmSelector.addEventListener('change', () => {
@@ -1999,10 +2255,17 @@ function setupHeatmapEventListeners() {
   });
 
   newTypeSelector.addEventListener('change', () => {
+    refreshHeatmapTMDropdown();
     drawHeatmap();
   });
 
   newRtRateSelector.addEventListener('change', () => {
+    refreshHeatmapTMDropdown();
+    drawHeatmap();
+  });
+
+  newPeriodSelector.addEventListener('change', () => {
+    refreshHeatmapTMDropdown();
     drawHeatmap();
   });
 }
@@ -2758,23 +3021,188 @@ function isValidAisleLocation(aisle, locationString = '') {
   return false;
 }
 
+// Helper function to parse time string to minutes
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const timeParts = timeStr.split(':');
+  if (timeParts.length < 2) return 0;
+  const hours = parseInt(timeParts[0]);
+  const minutes = parseInt(timeParts[1]);
+  return hours * 60 + minutes;
+}
+
+// Helper function to get period start time in minutes
+function getPeriodStartMinutes(period) {
+  switch(period) {
+    case 'p1': return 300; // 05:00
+    case 'p2': return 540; // 09:00
+    case 'p3': return 720; // 12:00
+    default: return 0;
+  }
+}
+
+// Helper function to get period end time in minutes
+function getPeriodEndMinutes(period) {
+  switch(period) {
+    case 'p1': return 510; // 08:30
+    case 'p2': return 720; // 12:00
+    case 'p3': return 930; // 15:30
+    default: return 1440; // End of day
+  }
+}
+
+// Helper function to check if a time falls within a period
+function isTimeInPeriod(timeStr, period) {
+  if (!timeStr || period === 'all') return true;
+
+  // Parse time string (format: "HH:MM:SS" or "HH:MM")
+  const timeParts = timeStr.split(':');
+  if (timeParts.length < 2) return true; // If we can't parse, include it
+
+  const hours = parseInt(timeParts[0]);
+  const minutes = parseInt(timeParts[1]);
+  const totalMinutes = hours * 60 + minutes;
+
+  // Define period ranges (EST)
+  switch(period) {
+    case 'p1': // 05:00 - 08:30
+      return totalMinutes >= 300 && totalMinutes < 510; // 5*60 to 8.5*60
+    case 'p2': // 09:00 - 12:00
+      return totalMinutes >= 540 && totalMinutes < 720; // 9*60 to 12*60
+    case 'p3': // 12:00 - 15:30
+      return totalMinutes >= 720 && totalMinutes < 930; // 12*60 to 15.5*60
+    default:
+      return true;
+  }
+}
+
+// Helper function to get transaction time range for period filtering
+function getTransactionTimeRange(transaction, period) {
+  if (period === 'all') return { include: true, firstTime: null, lastTime: null };
+
+  // Get all transaction times
+  const pickupTime = transaction.pickup?.startTime;
+  const putawayTime = transaction.putaway?.startTime;
+
+  // Check if either transaction falls in the period
+  const pickupInPeriod = isTimeInPeriod(pickupTime, period);
+  const putawayInPeriod = isTimeInPeriod(putawayTime, period);
+
+  // Include transaction if either pickup or putaway is in period
+  if (!pickupInPeriod && !putawayInPeriod) {
+    return { include: false, firstTime: null, lastTime: null };
+  }
+
+  // Determine first and last transaction times for this transaction
+  const times = [];
+  if (pickupTime) times.push(pickupTime);
+  if (putawayTime) times.push(putawayTime);
+
+  if (times.length === 0) {
+    return { include: true, firstTime: null, lastTime: null };
+  }
+
+  // Sort times to get first and last
+  times.sort();
+
+  return {
+    include: true,
+    firstTime: times[0],
+    lastTime: times[times.length - 1]
+  };
+}
+
 function generateHeatmapData() {
   const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
   const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
   const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+  const periodFilter = document.getElementById('heatmapPeriodFilter')?.value || 'all';
 
   let transactionsToAnalyze = [];
 
-  // First apply RT rate filter if selected
+  // First apply period filter and calculate period-specific rates if needed
+  let periodFilteredRates = {}; // Store period-specific rates for each TM
+
+  if (periodFilter !== 'all' || rtRateFilter !== 'all') {
+    // Calculate period-specific rates for all TMs
+    Object.keys(processedTMData).forEach(tmId => {
+      const tmData = processedTMData[tmId];
+
+      // Filter this TM's transactions by period
+      let tmTransactions = (rtTransactionData || []).filter(t =>
+        t.putaway.employeeId === tmId
+      );
+
+      // Apply period filter
+      if (periodFilter !== 'all') {
+        tmTransactions = tmTransactions.filter(t => {
+          const timeRange = getTransactionTimeRange(t, periodFilter);
+          return timeRange.include;
+        });
+      }
+
+      // Calculate period-specific hours and rate
+      if (tmTransactions.length > 0) {
+        let periodHours = 0;
+
+        if (tmData.actualLaborHours !== undefined) {
+          // For pasted data, calculate hours from first to last transaction in period
+          const allTimes = [];
+          tmTransactions.forEach(t => {
+            if (t.pickup?.startTime) allTimes.push(t.pickup.startTime);
+            if (t.putaway?.startTime) allTimes.push(t.putaway.startTime);
+          });
+
+          if (allTimes.length > 0) {
+            allTimes.sort();
+            const firstTime = allTimes[0];
+            const lastTime = allTimes[allTimes.length - 1];
+
+            // Calculate hours between first and last transaction
+            const firstMinutes = parseTimeToMinutes(firstTime);
+            const lastMinutes = parseTimeToMinutes(lastTime);
+            periodHours = (lastMinutes - firstMinutes) / 60;
+
+            // For period filter, cap at period end time
+            if (periodFilter !== 'all') {
+              const periodEnd = getPeriodEndMinutes(periodFilter);
+              const periodStart = getPeriodStartMinutes(periodFilter);
+              const cappedLastMinutes = Math.min(lastMinutes, periodEnd);
+              const cappedFirstMinutes = Math.max(firstMinutes, periodStart);
+              periodHours = (cappedLastMinutes - cappedFirstMinutes) / 60;
+            }
+          }
+        } else {
+          // For Excel data, use actual time from transactions
+          periodHours = tmTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+        }
+
+        periodHours = Math.max(periodHours, 0.1); // Minimum 0.1 hours to avoid division by zero
+        const periodRate = tmTransactions.length / periodHours;
+        periodFilteredRates[tmId] = periodRate;
+      } else {
+        periodFilteredRates[tmId] = 0;
+      }
+    });
+  }
+
+  // Apply RT rate filter if selected
   if (rtRateFilter !== 'all') {
     // Get list of employee IDs that match the rate filter
     const eligibleEmployees = new Set();
 
     Object.keys(processedTMData).forEach(tmId => {
       const tmData = processedTMData[tmId];
-      const hasLaborData = tmData.actualLaborHours !== undefined;
-      const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
-      const rate = parseFloat(rtRate) || 0;
+
+      // Use period-filtered rate if available, otherwise use original rate
+      let rate = 0;
+      if (periodFilter !== 'all' && periodFilteredRates[tmId] !== undefined) {
+        rate = periodFilteredRates[tmId];
+      } else {
+        const hasLaborData = tmData.actualLaborHours !== undefined;
+        const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+        rate = parseFloat(rtRate) || 0;
+      }
 
       let includeEmployee = false;
 
@@ -2807,6 +3235,14 @@ function generateHeatmapData() {
     );
   } else {
     transactionsToAnalyze = rtTransactionData || [];
+  }
+
+  // Apply period filter to transactions
+  if (periodFilter !== 'all') {
+    transactionsToAnalyze = transactionsToAnalyze.filter(t => {
+      const timeRange = getTransactionTimeRange(t, periodFilter);
+      return timeRange.include;
+    });
   }
 
   // Then apply TM selector filter
@@ -2959,6 +3395,145 @@ function generateHeatmapData() {
   return currentHeatmapData;
 }
 
+// Update filter summary and average PPH display
+function updateFilterSummary() {
+  const summaryDiv = document.getElementById('heatmapFilterSummary');
+  const filterTextSpan = document.getElementById('filterSummaryText');
+  const avgPPHSpan = document.getElementById('avgPPHDisplay');
+
+  if (!summaryDiv || !filterTextSpan || !avgPPHSpan) return;
+
+  // Get current filter values
+  const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
+  const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
+  const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+  const periodFilter = document.getElementById('heatmapPeriodFilter')?.value || 'all';
+
+  // Build filter summary text
+  let filterParts = [];
+
+  if (selectedTM !== 'all') {
+    const tmOption = document.querySelector(`#heatmapTMSelector option[value="${selectedTM}"]`);
+    const tmText = tmOption ? tmOption.textContent.split(' - ')[0] : selectedTM;
+    filterParts.push(`TM: ${tmText}`);
+  }
+
+  if (transactionType !== 'all') {
+    filterParts.push(`Type: ${transactionType === 'long' ? 'Long Transactions' : transactionType}`);
+  }
+
+  if (rtRateFilter !== 'all') {
+    const rateFilterText = {
+      'below_4': '<4.0 PPH',
+      'below_5': '<5.0 PPH',
+      'below_6': '<6.0 PPH',
+      'above_6': '>6.0 PPH',
+      'above_7': '>7.0 PPH'
+    };
+    filterParts.push(`Rate: ${rateFilterText[rtRateFilter]}`);
+  }
+
+  if (periodFilter !== 'all') {
+    const periodText = {
+      'p1': 'P1 (05:00-08:30)',
+      'p2': 'P2 (09:00-12:00)',
+      'p3': 'P3 (12:00-15:30)'
+    };
+    filterParts.push(`Period: ${periodText[periodFilter]}`);
+  }
+
+  if (activeColorFilter) {
+    const colorText = {
+      'green': 'Ground Levels',
+      'yellow': 'Mid Levels',
+      'red': 'High Levels'
+    };
+    filterParts.push(`Height: ${colorText[activeColorFilter]}`);
+  }
+
+  if (selectedPickupZone) {
+    filterParts.push(`Pickup: ${selectedPickupZone}`);
+  }
+
+  // Update filter summary text
+  if (filterParts.length > 0) {
+    filterTextSpan.textContent = `Active Filters: ${filterParts.join(' | ')}`;
+    summaryDiv.style.display = 'block';
+  } else {
+    filterTextSpan.textContent = 'Active Filters: None';
+    summaryDiv.style.display = 'none';
+  }
+
+  // Calculate average PPH based on filtered data
+  // Use heatmapTransactionData which contains the filtered transactions
+  if (heatmapTransactionData && heatmapTransactionData.length > 0) {
+    // Get unique TMs in filtered data
+    const tmTransactionCounts = {};
+    const tmHours = {};
+
+    heatmapTransactionData.forEach(t => {
+      const tmId = t.putaway.employeeId;
+      if (!tmTransactionCounts[tmId]) {
+        tmTransactionCounts[tmId] = 0;
+        tmHours[tmId] = 0;
+      }
+      tmTransactionCounts[tmId]++;
+    });
+
+    // Calculate hours for each TM based on period
+    Object.keys(tmTransactionCounts).forEach(tmId => {
+      const tmData = processedTMData[tmId];
+      if (!tmData) return;
+
+      const tmFilteredTransactions = heatmapTransactionData.filter(t => t.putaway.employeeId === tmId);
+
+      if (periodFilter !== 'all') {
+        // Calculate period-specific hours
+        if (tmData.actualLaborHours !== undefined) {
+          // For pasted data, use first to last transaction time
+          const allTimes = [];
+          tmFilteredTransactions.forEach(t => {
+            if (t.pickup?.startTime) allTimes.push(t.pickup.startTime);
+            if (t.putaway?.startTime) allTimes.push(t.putaway.startTime);
+          });
+
+          if (allTimes.length > 0) {
+            allTimes.sort();
+            const firstMinutes = parseTimeToMinutes(allTimes[0]);
+            const lastMinutes = parseTimeToMinutes(allTimes[allTimes.length - 1]);
+            const periodEnd = getPeriodEndMinutes(periodFilter);
+            const periodStart = getPeriodStartMinutes(periodFilter);
+            const cappedLastMinutes = Math.min(lastMinutes, periodEnd);
+            const cappedFirstMinutes = Math.max(firstMinutes, periodStart);
+            tmHours[tmId] = (cappedLastMinutes - cappedFirstMinutes) / 60;
+          }
+        } else {
+          // For Excel data, use actual transaction time
+          tmHours[tmId] = tmFilteredTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+        }
+      } else {
+        // Use original hours
+        if (tmData.actualLaborHours !== undefined) {
+          tmHours[tmId] = tmData.actualLaborHours;
+        } else {
+          tmHours[tmId] = tmFilteredTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+        }
+      }
+
+      tmHours[tmId] = Math.max(tmHours[tmId], 0.1); // Minimum 0.1 hours
+    });
+
+    // Calculate overall average PPH
+    const totalTransactions = Object.values(tmTransactionCounts).reduce((sum, count) => sum + count, 0);
+    const totalHours = Object.values(tmHours).reduce((sum, hours) => sum + hours, 0);
+    const avgPPH = totalHours > 0 ? (totalTransactions / totalHours) : 0;
+
+    avgPPHSpan.textContent = `Avg PPH: ${avgPPH.toFixed(2)}`;
+  } else {
+    avgPPHSpan.textContent = `Avg PPH: -`;
+  }
+}
+
 function drawHeatmap() {
   if (!warehouseCtx) return;
 
@@ -2968,13 +3543,16 @@ function drawHeatmap() {
   warehouseCtx.fillRect(0, 0, warehouseCanvas.width, warehouseCanvas.height);
 
   drawWarehouseLayout();
-  
+
   // Clear previous single transaction coordinates
   singleTransactionCoordinates = [];
-  
+
   const heatmapData = generateHeatmapData();
   const ctx = warehouseCtx;
-  
+
+  // Update filter summary and average PPH
+  updateFilterSummary();
+
   // Calculate statistics for sidebar
   calculateAndDisplayStats(heatmapData);
   
@@ -3207,14 +3785,15 @@ function clearAllFilters() {
   isDrawingRectangle = false;
   rectangleSelectionEnabled = false;
   heatmapImageData = null;
-  
+
   // Reset UI elements
   document.getElementById('heatmapTMSelector').value = 'all';
   document.getElementById('heatmapTransactionType').value = 'all';
   document.getElementById('heatmapRTRateFilter').value = 'all';
+  document.getElementById('heatmapPeriodFilter').value = 'all';
   document.getElementById('rectangleSelectionStats').style.display = 'none';
   document.getElementById('clearSelectionBtn').style.display = 'none';
-  
+
   // Reset rectangle select button
   const rectangleBtn = document.getElementById('rectangleSelectBtn');
   if (rectangleBtn) {
@@ -3222,7 +3801,7 @@ function clearAllFilters() {
     rectangleBtn.classList.remove('btn-warning');
     rectangleBtn.classList.add('btn-secondary');
   }
-  
+
   updateColorFilterButtons();
   drawHeatmap(); // Redraw with no filters
 }
@@ -3835,23 +4414,64 @@ function getTotalPickupTransactions() {
 }
 
 function calculatePickupZoneTotals() {
-  // Calculate pickup zone totals from complete dataset, respecting employee, transaction type, and RT rate filters only
+  // Calculate pickup zone totals from complete dataset, respecting employee, transaction type, period, and RT rate filters only
   const selectedTM = document.getElementById('heatmapTMSelector')?.value || 'all';
   const transactionType = document.getElementById('heatmapTransactionType')?.value || 'all';
   const rtRateFilter = document.getElementById('heatmapRTRateFilter')?.value || 'all';
+  const periodFilter = document.getElementById('heatmapPeriodFilter')?.value || 'all';
 
   let transactionsForPickupCounts = [];
 
-  // First apply RT rate filter if selected
+  // First apply RT rate filter if selected (with period-aware rate calculation)
   if (rtRateFilter !== 'all') {
     // Get list of employee IDs that match the rate filter
     const eligibleEmployees = new Set();
 
     Object.keys(processedTMData).forEach(tmId => {
       const tmData = processedTMData[tmId];
-      const hasLaborData = tmData.actualLaborHours !== undefined;
-      const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
-      const rate = parseFloat(rtRate) || 0;
+
+      // Calculate period-specific rate if period filter is active
+      let rate = 0;
+      if (periodFilter !== 'all') {
+        // Filter TM's transactions by period
+        let tmTransactions = (rtTransactionData || []).filter(t =>
+          t.putaway.employeeId === tmId
+        );
+        tmTransactions = tmTransactions.filter(t => {
+          const timeRange = getTransactionTimeRange(t, periodFilter);
+          return timeRange.include;
+        });
+
+        if (tmTransactions.length > 0) {
+          let periodHours = 0;
+          if (tmData.actualLaborHours !== undefined) {
+            const allTimes = [];
+            tmTransactions.forEach(t => {
+              if (t.pickup?.startTime) allTimes.push(t.pickup.startTime);
+              if (t.putaway?.startTime) allTimes.push(t.putaway.startTime);
+            });
+            if (allTimes.length > 0) {
+              allTimes.sort();
+              const firstMinutes = parseTimeToMinutes(allTimes[0]);
+              const lastMinutes = parseTimeToMinutes(allTimes[allTimes.length - 1]);
+              const periodEnd = getPeriodEndMinutes(periodFilter);
+              const periodStart = getPeriodStartMinutes(periodFilter);
+              const cappedLastMinutes = Math.min(lastMinutes, periodEnd);
+              const cappedFirstMinutes = Math.max(firstMinutes, periodStart);
+              periodHours = (cappedLastMinutes - cappedFirstMinutes) / 60;
+            }
+          } else {
+            periodHours = tmTransactions.reduce((sum, t) => sum + (t.totalTime / 3600), 0);
+          }
+          periodHours = Math.max(periodHours, 0.1);
+          rate = tmTransactions.length / periodHours;
+        }
+      } else {
+        // Use original rate
+        const hasLaborData = tmData.actualLaborHours !== undefined;
+        const rtRate = hasLaborData ? tmData.actualPutawayRate : tmData.performanceMetrics.avgPutawayRate;
+        rate = parseFloat(rtRate) || 0;
+      }
 
       let includeEmployee = false;
 
@@ -3884,6 +4504,14 @@ function calculatePickupZoneTotals() {
     );
   } else {
     transactionsForPickupCounts = rtTransactionData || [];
+  }
+
+  // Apply period filter
+  if (periodFilter !== 'all') {
+    transactionsForPickupCounts = transactionsForPickupCounts.filter(t => {
+      const timeRange = getTransactionTimeRange(t, periodFilter);
+      return timeRange.include;
+    });
   }
 
   // Apply employee filter
