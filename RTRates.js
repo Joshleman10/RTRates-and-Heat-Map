@@ -1,6 +1,6 @@
 // RT Productivity Analysis JavaScript
 // Debug target - set to null to disable debugging
-const DEBUG_TARGET_TM = 'DROBINSO48';
+const DEBUG_TARGET_TM = 'CPEGUS';
 
 let rtTransactionData = [];
 let rawTransactionData = []; // Store raw Excel data for time range calculations
@@ -13,6 +13,7 @@ let selectedTMId = null;
 let singleTransactionCoordinates = []; // Track individual transaction positions for hover events
 let currentUserUsername = ''; // Store username extracted from file path for STU forms
 let lcFlaggedTMs = new Set(); // Track TMs flagged as Learning Curve
+let improperForkTMs = new Map(); // Track TMs using improper forks (REP instead of RPUT) - Map of tmId -> {repCount, rputCount}
 
 // Data loading tracking
 let hasTransactionData = false;
@@ -384,14 +385,40 @@ function processRTTransactions(rawData) {
       return passed;
     }
 
-    // 212 transactions must come from RPUT locations (filter out troubleshooting/one-off transactions)
+    // 212 transactions must come from RPUT or REP locations
+    // RPUT = proper reach truck forks, REP = improper forks (behavioral issue)
     if (transactionType === 212 || transactionType === "212") {
       const isFromRPUT = fromLocation.startsWith('RPUT');
-      const passed = validTransactionType && validLocations && isFromRPUT;
+      const isFromREP = fromLocation.startsWith('REP');
+      const isFromValidFork = isFromRPUT || isFromREP;
+      const passed = validTransactionType && validLocations && isFromValidFork;
+
+      // Track improper fork usage for REP transactions
+      if (passed && isFromREP && employeeId) {
+        if (!improperForkTMs.has(employeeId)) {
+          improperForkTMs.set(employeeId, { repCount: 0, rputCount: 0, totalCount: 0 });
+        }
+        const stats = improperForkTMs.get(employeeId);
+        stats.repCount++;
+        stats.totalCount++;
+      } else if (passed && isFromRPUT && employeeId) {
+        if (!improperForkTMs.has(employeeId)) {
+          improperForkTMs.set(employeeId, { repCount: 0, rputCount: 0, totalCount: 0 });
+        }
+        const stats = improperForkTMs.get(employeeId);
+        stats.rputCount++;
+        stats.totalCount++;
+      }
 
       if (DEBUG_TARGET_TM && employeeId === DEBUG_TARGET_TM) {
         console.log(`🔍 [${DEBUG_TARGET_TM}] 212 validation:`, {
+          fromLocation: fromLocation,
+          toLocation: toLocation,
           isFromRPUT,
+          isFromREP,
+          isFromValidFork,
+          validTransactionType,
+          validLocations,
           passed
         });
       }
@@ -2074,7 +2101,19 @@ function refreshHeatmapTMDropdown() {
     const rateToShow = parseFloat(rawRate) || 0; // Ensure it's a number
     const rateLabel = hasLaborData ? 'PPH' : 'PPH (Est)';
 
-    option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)`;
+    // Check for improper fork usage
+    const forkStats = improperForkTMs.get(tmId);
+    const hasImproperFork = forkStats && forkStats.repCount > 0;
+    const forkIndicator = hasImproperFork ? ' ⚠️' : '';
+
+    option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)${forkIndicator}`;
+
+    // Add title attribute for tooltip
+    if (hasImproperFork) {
+      const repPercent = ((forkStats.repCount / forkStats.totalCount) * 100).toFixed(0);
+      option.title = `⚠️ Improper Fork Usage: ${forkStats.repCount}/${forkStats.totalCount} (${repPercent}%) using REP instead of RPUT`;
+    }
+
     selector.appendChild(option);
   });
 
@@ -2213,7 +2252,19 @@ function populateHeatmapTMSelector() {
     const rateToShow = parseFloat(rawRate) || 0; // Ensure it's a number
     const rateLabel = hasLaborData ? 'PPH' : 'PPH (Est)';
 
-    option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)`;
+    // Check for improper fork usage
+    const forkStats = improperForkTMs.get(tmId);
+    const hasImproperFork = forkStats && forkStats.repCount > 0;
+    const forkIndicator = hasImproperFork ? ' ⚠️' : '';
+
+    option.textContent = `${tmId} - ${rateToShow.toFixed(1)} ${rateLabel} (${tmData.totalPutaways} transactions)${forkIndicator}`;
+
+    // Add title attribute for tooltip
+    if (hasImproperFork) {
+      const repPercent = ((forkStats.repCount / forkStats.totalCount) * 100).toFixed(0);
+      option.title = `⚠️ Improper Fork Usage: ${forkStats.repCount}/${forkStats.totalCount} (${repPercent}%) using REP instead of RPUT`;
+    }
+
     selector.appendChild(option);
   });
 
@@ -5217,6 +5268,9 @@ function calculateNameMatchScore(tmId, fullName) {
   // Exact name match (highest score)
   if (tmIdLower === fullName.toLowerCase().replace(/\s+/g, '')) score += 100;
 
+  // EXACT first initial + full last name (like CPEGUS = C + PEGUS)
+  if (tmIdClean === (firstName.charAt(0) + lastName)) score += 95;
+
   // First letter + last name variations
   if (tmIdLower.includes(firstName.charAt(0) + lastName)) score += 80;
   if (tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 7))) score += 75;
@@ -5251,7 +5305,7 @@ function calculateNameMatchScore(tmId, fullName) {
   }
 
   // Debug for specific case
-  if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+  if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
     console.log(`🔍 [${DEBUG_TARGET_TM}] SCORE CALCULATION for "${fullName}":`);
     console.log(`   tmIdLower: "${tmIdLower}"`);
     console.log(`   tmIdClean: "${tmIdClean}"`);
@@ -5259,6 +5313,7 @@ function calculateNameMatchScore(tmId, fullName) {
     console.log(`   firstName: "${firstName}", lastName: "${lastName}"`);
 
     // Test each condition individually
+    const cond0 = tmIdClean === (firstName.charAt(0) + lastName);
     const cond1 = tmIdLower === fullName.toLowerCase().replace(/\s+/g, '');
     const cond2 = tmIdLower.includes(firstName.charAt(0) + lastName);
     const cond3 = tmIdClean.includes(firstName.charAt(0) + lastName.substring(0, 7));
@@ -5270,7 +5325,8 @@ function calculateNameMatchScore(tmId, fullName) {
     const cond9 = tmIdLower.includes(firstName + lastName.charAt(0));
     const cond10 = firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1));
 
-    console.log(`   Condition 1 (exact): ${cond1} +${cond1 ? 100 : 0}`);
+    console.log(`   Condition 0 (EXACT first+last): ${cond0} +${cond0 ? 95 : 0} [NEW]`);
+    console.log(`   Condition 1 (exact full): ${cond1} +${cond1 ? 100 : 0}`);
     console.log(`   Condition 2 (first+last): ${cond2} +${cond2 ? 80 : 0}`);
     console.log(`   Condition 3 (first+last7): ${cond3} +${cond3 ? 75 : 0}`);
     console.log(`   Condition 4 (first+last6): ${cond4} +${cond4 ? 70 : 0}`);
@@ -5332,11 +5388,6 @@ function integrateLaborHours() {
     if (laborRecord) {
       usedCLMSNames.add(tmId); // Track exact matches too
       console.log(`✅ EXACT MATCH: "${tmId}"`);
-
-      // Special logging for Dennis Robinson Jr
-      if (tmId === "Dennis Robinson Jr") {
-        console.log(`🎯 "Dennis Robinson Jr" claimed by EXACT MATCH: "${tmId}"`);
-      }
     }
 
     if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
@@ -5352,7 +5403,7 @@ function integrateLaborHours() {
       const possibleMatches = Object.keys(laborHoursData).filter(fullName => {
         // Skip names that have already been matched to another username
         if (usedCLMSNames.has(fullName)) {
-          if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+          if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
             console.log(`🔍 [${DEBUG_TARGET_TM}] Skipping "${fullName}" - already matched to another username`);
           }
           return false;
@@ -5361,7 +5412,12 @@ function integrateLaborHours() {
         const nameParts = fullName.toLowerCase().split(' ');
         if (nameParts.length >= 2) {
           const firstName = nameParts[0];
-          const lastName = nameParts[nameParts.length - 1];
+          // Handle names with suffixes like "Jr", "Sr", "III", etc.
+          const lastPart = nameParts[nameParts.length - 1].toLowerCase();
+          const isSuffix = ['jr', 'jr.', 'sr', 'sr.', 'ii', 'iii', 'iv', 'v'].includes(lastPart);
+          const lastName = isSuffix && nameParts.length > 2 ?
+                           nameParts[nameParts.length - 2] :
+                           nameParts[nameParts.length - 1];
 
           // Enhanced matching strategies
           return (
@@ -5371,6 +5427,9 @@ function integrateLaborHours() {
             (firstName.startsWith(tmIdLower.charAt(0)) && lastName.includes(tmIdLower.slice(1))) ||
             tmIdLower.includes(firstName) ||
             tmIdLower.includes(lastName) ||
+
+            // EXACT match: first initial + full last name (like CPEGUS = C + PEGUS)
+            tmIdClean === (firstName.charAt(0) + lastName) ||
 
             // New strategies for cases like DROBINSO48 -> Dennis Robinson
             // First letter + truncated last name
@@ -5396,18 +5455,22 @@ function integrateLaborHours() {
         console.log(`🔍 [${DEBUG_TARGET_TM}] Strategy 1 results:`, possibleMatches);
         console.log(`   Clean tmId: "${tmIdClean}"`);
 
-        // Debug specific matching for Dennis Robinson Jr
-        const dennisRobinson = laborHoursData["Dennis Robinson Jr"];
-        if (dennisRobinson) {
-          const dennisFirstName = "dennis";
-          const dennisLastName = "robinson";
-          console.log(`🔍 [${DEBUG_TARGET_TM}] Testing against "Dennis Robinson Jr":`);
-          console.log(`   firstName: "${dennisFirstName}", lastName: "${dennisLastName}"`);
-          console.log(`   Test tmIdClean.charAt(0) === firstName.charAt(0): "${tmIdClean.charAt(0)}" === "${dennisFirstName.charAt(0)}" = ${tmIdClean.charAt(0) === dennisFirstName.charAt(0)}`);
-          console.log(`   Test tmIdClean.substring(1): "${tmIdClean.substring(1)}"`);
-          console.log(`   Test lastName.substring(0, 6): "${dennisLastName.substring(0, 6)}"`);
-          console.log(`   Test tmIdClean.substring(1).includes(lastName.substring(0, 6)): "${tmIdClean.substring(1)}".includes("${dennisLastName.substring(0, 6)}") = ${tmIdClean.substring(1).includes(dennisLastName.substring(0, 6))}`);
-        }
+        // Test against all available CLMS names for debugging
+        console.log(`🔍 [${DEBUG_TARGET_TM}] Testing against all CLMS names:`);
+        Object.keys(laborHoursData).forEach(testName => {
+          if (testName === '__totals') return;
+
+          const testParts = testName.toLowerCase().split(' ');
+          if (testParts.length >= 2) {
+            const testFirst = testParts[0];
+            const testLast = testParts[testParts.length - 1];
+            const pattern = testFirst.charAt(0) + testLast;
+            const exactMatch = tmIdClean === pattern;
+            const includesMatch = tmIdLower.includes(pattern);
+
+            console.log(`   "${testName}": pattern="${pattern}", exact=${exactMatch}, includes=${includesMatch}`);
+          }
+        });
       }
 
       // Strategy 2: If Strategy 1 doesn't work, try reverse matching
@@ -5415,7 +5478,7 @@ function integrateLaborHours() {
         Object.keys(laborHoursData).forEach(fullName => {
           // Skip names that have already been matched to another username
           if (usedCLMSNames.has(fullName)) {
-            if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM && fullName === "Dennis Robinson Jr") {
+            if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
               console.log(`🔍 [${DEBUG_TARGET_TM}] Strategy 2: Skipping "${fullName}" - already matched to another username`);
             }
             return;
@@ -5457,11 +5520,6 @@ function integrateLaborHours() {
 
         // Log all matches to help debug who claimed which name
         console.log(`✅ MATCHED: "${tmId}" → "${possibleMatches[0]}"`);
-
-        // Special logging for Dennis Robinson Jr
-        if (possibleMatches[0] === "Dennis Robinson Jr") {
-          console.log(`🎯 "Dennis Robinson Jr" claimed by: "${tmId}"`);
-        }
 
         if (DEBUG_TARGET_TM && tmId === DEBUG_TARGET_TM) {
           console.log(`🔍 [${DEBUG_TARGET_TM}] ✅ MATCHED to: "${possibleMatches[0]}"`);

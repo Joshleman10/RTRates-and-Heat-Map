@@ -53,7 +53,8 @@
       <div class="upload-buttons">
         <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
           📂 Select Transactions File (Korber Search Transactions)
-          <span class="data-status-checkmark" id="transactionDataCheck" style="display: none; visibility: hidden;">✅</span>
+          <span class="data-status-checkmark" id="transactionDataCheck"
+            style="display: none; visibility: hidden;">✅</span>
         </button>
         <button class="labor-btn labor-btn-secondary" id="pasteLaborDataBtnTop">
           📋 Import CLMS Data from Clipboard
@@ -83,7 +84,8 @@
       <div class="alert alert-info"
         style="background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
         <h4 style="color: #0c5460; margin-bottom: 0.75rem;">📋 STU (Seek to Understand) Criteria</h4>
-        <p style="color: #0c5460; margin-bottom: 0.5rem; font-size: 0.95rem;">Team members are flagged for STU based on the following criteria:</p>
+        <p style="color: #0c5460; margin-bottom: 0.5rem; font-size: 0.95rem;">Team members are flagged for STU based on
+          the following criteria:</p>
         <ul style="color: #0c5460; margin-bottom: 0; font-size: 0.9rem; padding-left: 1.25rem;">
           <li>Must have minimum 2 hours worked (fair evaluation threshold)</li>
           <li><strong>Top 2</strong> team members for most long transactions (>10 minutes)</li>
@@ -164,18 +166,21 @@
         <p class="section-description">Visual representation of transaction patterns across warehouse locations</p>
       </div>
 
-      <div class="heatmap-filter-summary" id="heatmapFilterSummary" style="display: none; background: #e7f3ff; border: 2px solid #0066cc; border-radius: 8px; padding: 8px 16px; margin: 0 0 10px 0; text-align: center;">
+      <div class="heatmap-filter-summary" id="heatmapFilterSummary"
+        style="display: none; background: #e7f3ff; border: 2px solid #0066cc; border-radius: 8px; padding: 8px 16px; margin: 0 0 10px 0; text-align: center;">
         <div style="display: flex; justify-content: center; align-items: center; gap: 30px; flex-wrap: wrap;">
           <div style="font-weight: bold; color: #0066cc; font-size: 14px;">
             <span id="filterSummaryText">Active Filters: None</span>
           </div>
-          <div style="font-weight: bold; color: #0066cc; font-size: 14px; border-left: 2px solid #0066cc; padding-left: 30px;">
+          <div
+            style="font-weight: bold; color: #0066cc; font-size: 14px; border-left: 2px solid #0066cc; padding-left: 30px;">
             <span id="avgPPHDisplay">Avg PPH: -</span>
           </div>
         </div>
       </div>
 
-      <div class="heatmap-controls" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+      <div class="heatmap-controls"
+        style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
         <!-- Left side controls -->
         <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
           <div class="heatmap-control-group">
@@ -220,7 +225,8 @@
       <div class="heatmap-info-bar"
         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border: 2px solid #dee2e6;">
         <div class="rack-height-legend" style="display: flex; align-items: center; gap: 15px;">
-          <div class="legend-title" style="color: #212529; font-weight: bold; margin-right: 15px; font-size: 16px;">Rack Height Legend (Click to filter):</div>
+          <div class="legend-title" style="color: #212529; font-weight: bold; margin-right: 15px; font-size: 16px;">Rack
+            Height Legend (Click to filter):</div>
           <button id="filterGreenBtn" class="color-filter-btn"
             style="background: #28a745; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">
             🟢 Ground (A, B, C)
@@ -238,13 +244,19 @@
         <!-- Right side container with fixed positioning -->
         <div style="display: flex; align-items: center; gap: 15px; min-width: 900px; justify-content: flex-end;">
           <!-- Rectangle Selection Stats -->
-          <div class="stat-card" id="rectangleSelectionStats" style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 6px; padding: 8px 12px; display: none; width: 360px; flex-shrink: 0; height: 32px; overflow: hidden;">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; white-space: nowrap; height: 100%;">
+          <div class="stat-card" id="rectangleSelectionStats"
+            style="background: #e8f4f8; border: 2px solid #b3d9e6; border-radius: 6px; padding: 8px 12px; display: none; width: 360px; flex-shrink: 0; height: 32px; overflow: hidden;">
+            <div
+              style="display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; white-space: nowrap; height: 100%;">
               <span style="color: #0c5460; font-weight: bold;">📐 Selected:</span>
-              <span style="color: #0c5460;"><span id="selectedAreaTransactions" style="font-weight: bold;">0</span> txns</span>
-              <span style="color: #0c5460;">(<span id="selectedAreaPercentage" style="font-weight: bold;">0%</span>)</span>
-              <span style="color: #0c5460;"><span id="selectedAreaLocations" style="font-weight: bold;">0</span> locs</span>
-              <span id="rectangleFilterInfo" style="color: #0c5460; font-style: italic; font-size: 11px; margin-left: 5px;">
+              <span style="color: #0c5460;"><span id="selectedAreaTransactions" style="font-weight: bold;">0</span>
+                txns</span>
+              <span style="color: #0c5460;">(<span id="selectedAreaPercentage"
+                  style="font-weight: bold;">0%</span>)</span>
+              <span style="color: #0c5460;"><span id="selectedAreaLocations" style="font-weight: bold;">0</span>
+                locs</span>
+              <span id="rectangleFilterInfo"
+                style="color: #0c5460; font-style: italic; font-size: 11px; margin-left: 5px;">
                 <!-- Filter information will be populated here -->
               </span>
             </div>
@@ -262,7 +274,7 @@
         <!-- Left sidebar with statistics -->
         <div class="warehouse-stats-sidebar"
           style="display: flex; flex-direction: column; gap: 15px; min-width: 200px;">
-          
+
           <!-- Rack Level Totals -->
           <div class="stat-card" id="rackLevelTotals"
             style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
@@ -294,23 +306,28 @@
               <span id="highTotal" style="font-weight: bold; color: #212529;">0</span>
             </div>
           </div>
-          
+
           <!-- Additional Metrics -->
-          <div class="stat-card" id="additionalMetrics" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+          <div class="stat-card" id="additionalMetrics"
+            style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
             <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Additional Metrics</h4>
-            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="stat-item"
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span style="color: #212529;">Hottest Aisle:</span>
               <span id="hottestAisleStat" style="font-weight: bold; color: #212529;">-</span>
             </div>
-            <div class="stat-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="stat-item"
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span style="color: #212529;">&gt;21 Bays Deep:</span>
               <span id="beyondBreezewayCombo" style="font-weight: bold; color: #212529;">0 (0%)</span>
             </div>
           </div>
 
           <!-- Travel by Pickup Zone -->
-          <div class="stat-card" id="pickupZoneTravelTimes" style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
-            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Est Raw Travel By Pickup Zone</h4>
+          <div class="stat-card" id="pickupZoneTravelTimes"
+            style="background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 8px; padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #212529; font-size: 14px; font-weight: bold;">Est Raw Travel By Pickup
+              Zone</h4>
             <div id="pickupZoneList" style="display: flex; flex-direction: column; gap: 4px;">
               <!-- Pickup zone travel times will be populated here -->
             </div>
