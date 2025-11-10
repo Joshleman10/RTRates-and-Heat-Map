@@ -176,6 +176,33 @@
     "baseBayDistance": 20,
     "baseHeightDistance": 10
   },
+  "oneWayAisleSystem": {
+    "enabled": true,
+    "description": "All aisles are paired with one-way traffic flow alternating between pairs",
+    "breezeways": [
+      {
+        "bayNumber": 21,
+        "description": "Primary breezeway after bay 21 (all aisles)",
+        "applicableAisles": "all"
+      },
+      {
+        "bayNumber": 42,
+        "description": "Secondary breezeway after bay 42 (aisles 14-45 only)",
+        "applicableAisles": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]
+      }
+    ],
+    "aislePairs": {
+      "pattern": "alternating",
+      "explanation": "Even-numbered aisle pairs alternate accessibility. 14/15 not accessible, 16/17 accessible, 18/19 not accessible, etc.",
+      "accessibilityRule": "Pairs starting with even numbers: if (pairStart / 2) % 2 === 0, then NOT accessible from pickup zones"
+    },
+    "notes": [
+      "TMs travel down the middle between paired aisles in one direction only",
+      "Accessible aisles: can be entered directly from pickup zones",
+      "Not accessible aisles: require traveling to breezeway and U-turning back",
+      "Breezeways allow bidirectional cross-aisle travel"
+    ]
+  },
   "locationParser": {
     "regex": "^([A-Z]{4,})([0-9]{2,3})([A-Z])([0-9]{2})([A-Z])$",
     "groups": {

@@ -114,37 +114,162 @@ function parseLocation(location) {
   return null;
 }
 
+// Helper: Determine if an aisle pair is accessible from pickup zones
+function isAislePairAccessible(aisleNumber) {
+  // Determine the pair starting aisle (always even number)
+  const pairStart = Math.floor(aisleNumber / 2) * 2;
+
+  // Alternating pattern: 14/15 NOT accessible, 16/17 accessible, 18/19 NOT accessible, etc.
+  // If (pairStart / 2) is even, the pair is NOT accessible
+  return (pairStart / 2) % 2 !== 0;
+}
+
+// Helper: Get the paired aisle number
+function getPairedAisle(aisleNumber) {
+  // Aisles are paired: 14/15, 16/17, 18/19, etc.
+  // If even, pair with next odd. If odd, pair with previous even.
+  return aisleNumber % 2 === 0 ? aisleNumber + 1 : aisleNumber - 1;
+}
+
+// Helper: Find nearest breezeway for a given bay number
+function findNearestBreezeway(bayNumber, aisleNumber) {
+  if (!warehouseMapping || !warehouseMapping.oneWayAisleSystem) {
+    return null;
+  }
+
+  const breezeways = warehouseMapping.oneWayAisleSystem.breezeways;
+  let nearestBreezeway = null;
+
+  for (const breezeway of breezeways) {
+    // Check if breezeway is applicable to this aisle
+    if (breezeway.applicableAisles === "all" ||
+        (Array.isArray(breezeway.applicableAisles) && breezeway.applicableAisles.includes(aisleNumber))) {
+
+      // Only consider breezeways that are past the target bay
+      if (breezeway.bayNumber >= bayNumber) {
+        if (!nearestBreezeway || breezeway.bayNumber < nearestBreezeway.bayNumber) {
+          nearestBreezeway = breezeway;
+        }
+      }
+    }
+  }
+
+  return nearestBreezeway;
+}
+
+// Calculate travel distance with one-way aisle system
+function calculateOneWayAisleTravel(from, to) {
+  // If one-way system is disabled, fall back to simple calculation
+  if (!warehouseMapping.oneWayAisleSystem || !warehouseMapping.oneWayAisleSystem.enabled) {
+    return null;
+  }
+
+  // Only apply one-way logic to putaway locations (not pickup zones or special zones)
+  if (to.type !== 'putawayLocation') {
+    return null;
+  }
+
+  const targetAisle = to.aisle;
+  const targetBay = to.bay;
+
+  // Check if target aisle is directly accessible from pickup zones
+  const isAccessible = isAislePairAccessible(targetAisle);
+
+  if (isAccessible) {
+    // Can access directly - no U-turn needed
+    // Travel straight to the aisle and then to the bay
+    const aisleDistance = Math.abs(targetAisle - (from.aisle || 0));
+    const bayDepth = Math.abs(targetBay - 5); // Assuming bay 5 is entry point
+
+    return {
+      accessible: true,
+      requiresUTurn: false,
+      aisleDistance: aisleDistance,
+      bayTravel: bayDepth,
+      breezewayUsed: null,
+      description: `Direct access to aisle ${targetAisle}, bay ${targetBay}`
+    };
+  } else {
+    // Not accessible - need to use paired aisle + breezeway + U-turn
+    const pairedAisle = getPairedAisle(targetAisle);
+    const breezeway = findNearestBreezeway(targetBay, pairedAisle);
+
+    if (!breezeway) {
+      console.warn(`No breezeway found for aisle ${targetAisle}, bay ${targetBay}`);
+      return null;
+    }
+
+    // Calculate travel path:
+    // 1. Travel to paired aisle
+    const aisleDistance = Math.abs(pairedAisle - (from.aisle || 0));
+
+    // 2. Travel down paired aisle to breezeway
+    const travelToBreezeway = breezeway.bayNumber - 5; // From entry (bay 5) to breezeway
+
+    // 3. Cross at breezeway (negligible distance, but we count it as 1 unit)
+    const breezewayPenalty = 1;
+
+    // 4. Travel back from breezeway to target bay in target aisle
+    const travelFromBreezeway = breezeway.bayNumber - targetBay;
+
+    // Total bay travel = down to breezeway + back to target bay
+    const totalBayTravel = travelToBreezeway + travelFromBreezeway;
+
+    return {
+      accessible: false,
+      requiresUTurn: true,
+      aisleDistance: aisleDistance,
+      bayTravel: totalBayTravel,
+      breezewayUsed: breezeway.bayNumber,
+      breezewayPenalty: breezewayPenalty,
+      pairedAisle: pairedAisle,
+      description: `U-turn required: Aisle ${pairedAisle} → Breezeway ${breezeway.bayNumber} → Aisle ${targetAisle} Bay ${targetBay}`
+    };
+  }
+}
+
 // Calculate travel distance between two locations
 function calculateTravelDistance(fromLocation, toLocation) {
   if (!warehouseMapping) {
     return null;
   }
-  
+
   const from = parseLocation(fromLocation);
   const to = parseLocation(toLocation);
-  
+
   if (!from || !to) {
     return null;
   }
-  
-  // Calculate aisle travel distance
-  const aisleDistance = Math.abs(to.aisle - from.aisle);
-  
-  // Calculate bay depth - how many bays deep from starting point (bay 05) to destination
-  let bayDepth = 0;
-  if (to.bay && typeof to.bay === 'number') {
-    // Bay depth is distance from bay 05 (starting point) to destination bay
-    const startingBay = 5; // All aisles start at bay 05
-    bayDepth = Math.abs(to.bay - startingBay);
+
+  // Try one-way aisle calculation first (if enabled)
+  const oneWayTravel = calculateOneWayAisleTravel(from, to);
+
+  let aisleDistance, bayDepth;
+
+  if (oneWayTravel) {
+    // Use one-way aisle calculations
+    aisleDistance = oneWayTravel.aisleDistance;
+    bayDepth = oneWayTravel.bayTravel + (oneWayTravel.breezewayPenalty || 0);
+  } else {
+    // Fall back to simple Manhattan distance
+    aisleDistance = Math.abs(to.aisle - from.aisle);
+
+    // Calculate bay depth - how many bays deep from starting point (bay 05) to destination
+    if (to.bay && typeof to.bay === 'number') {
+      const startingBay = 5; // All aisles start at bay 05
+      bayDepth = Math.abs(to.bay - startingBay);
+    } else {
+      bayDepth = 0;
+    }
   }
-  
+
   // Calculate height travel (rack level)
   let heightTravel = 0;
   if (to.level && warehouseMapping.rackLevels[to.level]) {
     // Height is the actual rack level (A/B/C = 1, D = 2, G = 3, etc.)
     heightTravel = warehouseMapping.rackLevels[to.level].height;
   }
-  
+
   return {
     fromLocation: fromLocation,
     toLocation: toLocation,
@@ -162,7 +287,8 @@ function calculateTravelDistance(fromLocation, toLocation) {
       aislesTraversed: aisleDistance,
       bayDepth: bayDepth,
       rackHeight: heightTravel
-    }
+    },
+    oneWayAisleInfo: oneWayTravel // Include one-way aisle details for debugging
   };
 }
 
